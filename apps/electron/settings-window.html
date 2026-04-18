@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Doujinshi Manager — Settings</title>
+  <style>
+    :root {
+      --bg: #111111;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --accent: #ff2e55;
+      --accent-hover: #e12649;
+      --text: #ffffff;
+      --muted: #888888;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+      display: none;
+    }
+
+    .window {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .titlebar {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-left: 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      -webkit-app-region: drag;
+      user-select: none;
+    }
+
+    .titlebar-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.2px;
+    }
+
+    .window-controls {
+      display: flex;
+      -webkit-app-region: no-drag;
+    }
+
+    .window-control {
+      width: 44px;
+      height: 44px;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .window-control:hover {
+      background: #222222;
+    }
+
+    .window-control.close:hover {
+      background: #3a1c22;
+    }
+
+    .content {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .helper-text,
+    .status-message {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .status-message {
+      min-height: 18px;
+    }
+
+    .status-message.error {
+      color: var(--accent);
+    }
+
+    input {
+      width: 100%;
+      height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+    }
+
+    input[type="number"] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    input::placeholder {
+      color: var(--muted);
+    }
+
+    input:focus {
+      border-color: var(--accent);
+    }
+
+    .path-input {
+      display: flex;
+      gap: 10px;
+    }
+
+    .path-input input {
+      flex: 1;
+    }
+
+    button {
+      height: 40px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .browse-button {
+      padding: 0 14px;
+      white-space: nowrap;
+    }
+
+    .browse-button:hover {
+      background: #202020;
+      border-color: #3a3a3a;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      padding-top: 4px;
+    }
+
+    .save-button {
+      min-width: 110px;
+      padding: 0 16px;
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .save-button:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <div class="titlebar">
+      <div class="titlebar-title">Doujinshi Manager — Settings</div>
+      <div class="window-controls">
+        <button class="window-control" id="minimize-window" type="button" aria-label="Minimize">—</button>
+        <button class="window-control close" id="close-window" type="button" aria-label="Close">×</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="form-group">
+        <label for="library-path-input">Library Path</label>
+        <div class="path-input">
+          <input type="text" id="library-path-input" placeholder="Where finished CBZ files should go">
+          <button id="library-path" class="browse-button" type="button">Browse</button>
+        </div>
+        <div class="helper-text">Final files are saved here.</div>
+      </div>
+
+      <div class="form-group">
+        <label for="page-workers">Page Workers</label>
+        <input type="number" id="page-workers" min="1" max="10">
+      </div>
+
+      <div class="form-group">
+        <label for="gallery-workers">Gallery Workers</label>
+        <input type="number" id="gallery-workers" min="1" max="3">
+      </div>
+
+      <div class="form-group">
+        <label for="api-delay">API Request Delay (seconds)</label>
+        <input type="number" id="api-delay" step="0.1" min="0.1">
+      </div>
+
+      <div class="form-group">
+        <label for="download-delay">Download Delay (seconds)</label>
+        <input type="number" id="download-delay" step="0.1" min="0">
+      </div>
+
+      <div class="form-group">
+        <label for="server-port">Server Port</label>
+        <input type="number" id="server-port" min="1024" max="65535">
+      </div>
+
+      <div id="status-message" class="status-message"></div>
+
+      <div class="actions">
+        <button id="save" class="save-button" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="settings-window.js"></script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", "Trebuchet MS", sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", "Consolas", monospace;
+}
+
+:root {
+  color-scheme: dark;
+  --ext-bg: #0f1115;
+  --ext-surface: #161a22;
+  --ext-surface-soft: #1b2029;
+  --ext-border: rgba(255, 255, 255, 0.08);
+  --ext-text: #e6e8ee;
+  --ext-muted: #9aa0a6;
+  --ext-accent: #ff3b5c;
+  --ext-accent-soft: rgba(255, 59, 92, 0.15);
+}
+
+html,
+body,
+#root {
+  min-width: 340px;
+  min-height: 440px;
+  overflow: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+body {
+  margin: 0;
+  background: var(--ext-bg);
+  color: var(--ext-text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

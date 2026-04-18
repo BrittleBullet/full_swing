@@ -1,0 +1,46 @@
+# Config and data
+config.json
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+logs/
+downloads/
+library/
+
+# Build artifacts
+backend/doujinshi-manager
+backend/doujinshi-manager.exe
+apps/backend/doujinshi-manager
+apps/backend/doujinshi-manager.exe
+apps/backend/server
+dist/
+out/
+**/.output/
+**/.wxt/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Dependencies
+node_modules/
+**/node_modules/
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+*.log
+.env
+.env.*
+
+# Temporary editor backups
+*~

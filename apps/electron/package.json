@@ -1,0 +1,12 @@
+{
+  "name": "doujinshi-manager",
+  "version": "1.0.0",
+  "description": "Local desktop manager for queued downloads and library organization",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "41.2.1"
+  }
+}
