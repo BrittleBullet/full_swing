@@ -17,6 +17,7 @@ apps/backend/doujinshi-manager.exe
 apps/backend/server
 dist/
 out/
+release/
 **/.output/
 **/.wxt/
 *.exe

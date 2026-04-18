@@ -109,8 +109,34 @@ function validateConfigShape(candidate) {
   return validated;
 }
 
+function findFirstExistingPath(candidates) {
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0] || null;
+}
+
+function getAssetsIconRoot() {
+  if (app.isPackaged) {
+    return findFirstExistingPath([
+      path.join(process.resourcesPath, 'assets', 'icons'),
+      path.join(process.resourcesPath, 'icons')
+    ]);
+  }
+
+  return path.join(__dirname, '..', '..', 'assets', 'icons');
+}
+
+function getBackendExecutablePath() {
+  if (app.isPackaged) {
+    return findFirstExistingPath([
+      path.join(process.resourcesPath, 'backend', 'doujinshi-manager.exe'),
+      path.join(process.resourcesPath, 'doujinshi-manager.exe')
+    ]);
+  }
+
+  return path.join(__dirname, '..', 'backend', 'doujinshi-manager.exe');
+}
+
 function getAppIconPath() {
-  const iconRoot = path.join(__dirname, '..', '..', 'assets', 'icons');
+  const iconRoot = getAssetsIconRoot();
   const candidates = process.platform === 'win32'
     ? [
         path.join(iconRoot, 'icon.ico'),
@@ -506,7 +532,7 @@ async function startBackend() {
   completionNotificationSent = false;
 
   const port = Number(config.server_port) || 8080;
-  const backendPath = path.join(__dirname, '..', 'backend', 'doujinshi-manager.exe');
+  const backendPath = getBackendExecutablePath();
   const alreadyRunning = await isBackendReachable(port);
   if (alreadyRunning) {
     const existingProcess = await findListeningBackendProcess(port);

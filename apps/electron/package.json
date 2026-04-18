@@ -4,9 +4,48 @@
   "description": "Local desktop manager for queued downloads and library organization",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win portable --x64",
+    "pack:win": "electron-packager . \"Doujinshi Manager\" --platform=win32 --arch=x64 --icon=../../assets/icons/icon.ico --out=../../release --overwrite --asar --extra-resource=../backend/doujinshi-manager.exe --extra-resource=../../assets/icons"
   },
-  "dependencies": {
-    "electron": "41.2.1"
+  "devDependencies": {
+    "electron": "41.2.1",
+    "electron-builder": "^26.0.12",
+    "electron-packager": "^17.1.2"
+  },
+  "build": {
+    "appId": "com.fullswing.doujinshi-manager",
+    "productName": "Doujinshi Manager",
+    "asar": true,
+    "directories": {
+      "output": "../../release"
+    },
+    "files": [
+      "*.js",
+      "*.html",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/doujinshi-manager.exe",
+        "to": "backend/doujinshi-manager.exe"
+      },
+      {
+        "from": "../../assets/icons",
+        "to": "assets/icons"
+      }
+    ],
+    "win": {
+      "icon": "../../assets/icons/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "artifactName": "Doujinshi-Manager-${version}-portable.${ext}"
   }
 }
