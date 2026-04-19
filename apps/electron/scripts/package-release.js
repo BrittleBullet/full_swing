@@ -5,6 +5,7 @@ const { execFileSync } = require("child_process");
 const electronDir = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(electronDir, "..", "..");
 const distDir = path.join(repoRoot, "dist");
+const legacyReleaseOutputDir = path.join(repoRoot, "release");
 const extensionBuildDir = path.join(repoRoot, "apps", "browser-extension", ".output", "chrome-mv3");
 const version = require(path.join(electronDir, "package.json")).version;
 const releaseDirName = `Full-Swing-v${version}`;
@@ -76,6 +77,7 @@ function main() {
   ensureExists(distDir, "dist directory");
   ensureExists(extensionBuildDir, "built extension directory");
 
+  fs.rmSync(legacyReleaseOutputDir, { recursive: true, force: true });
   fs.rmSync(releaseDir, { recursive: true, force: true });
   fs.rmSync(zipPath, { force: true });
   fs.mkdirSync(releaseDir, { recursive: true });
