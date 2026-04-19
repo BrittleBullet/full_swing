@@ -3,10 +3,10 @@ package downloader
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,18 +23,23 @@ type Manager struct {
 	library *library.Builder
 	config  *config.Config
 
-	jobCh    chan string                  // gallery IDs to process
-	progress chan models.DownloadProgress // progress events for SSE
+	jobCh    chan string
+	progress chan models.DownloadProgress
 	cancel   context.CancelFunc
+	runCtx   context.Context
 	wg       sync.WaitGroup
 
-	stateMu          sync.RWMutex
-	currentProgress  *models.DownloadProgress
-	lastBatchSuccess int
-	lastBatchFailed  int
-	batchInProgress  bool
-	shuttingDown     bool
-	currentCancels   map[string]context.CancelFunc
+	stateMu               sync.RWMutex
+	currentProgress       *models.DownloadProgress
+	lastBatchSuccess      int
+	lastBatchFailed       int
+	batchInProgress       bool
+	batchStartedAt        time.Time
+	currentGalleryID      string
+	currentGalleryStarted time.Time
+	shuttingDown          bool
+	currentCancels        map[string]context.CancelFunc
+	scheduledIDs          map[string]struct{}
 }
 
 func NewManager(db *database.DB, nhentai *nhentai.Client, library *library.Builder, config *config.Config) *Manager {
@@ -43,21 +48,22 @@ func NewManager(db *database.DB, nhentai *nhentai.Client, library *library.Build
 		nhentai:        nhentai,
 		library:        library,
 		config:         config,
-		jobCh:          make(chan string, 100),
+		jobCh:          make(chan string, 4096),
 		progress:       make(chan models.DownloadProgress, 100),
 		currentCancels: make(map[string]context.CancelFunc),
+		scheduledIDs:   make(map[string]struct{}),
 	}
 }
 
 func (m *Manager) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
+	m.runCtx = ctx
 	m.stateMu.Lock()
 	m.shuttingDown = false
 	m.stateMu.Unlock()
 
 	log.Printf("[DOWNLOADER] Starting downloader manager with %d gallery workers", m.config.GalleryWorkers)
-	// Start gallery workers
 	for i := 0; i < m.config.GalleryWorkers; i++ {
 		m.wg.Add(1)
 		go m.galleryWorker(ctx)
@@ -79,19 +85,34 @@ func (m *Manager) Stop() {
 
 func (m *Manager) Enqueue(ids []string) error {
 	log.Printf("[ENQUEUE] Attempting to enqueue %d galleries", len(ids))
-	if len(ids) > 0 {
-		m.beginBatch()
+	if len(ids) == 0 {
+		return nil
 	}
+	m.beginBatch()
+
+	runCtx := m.runCtx
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
+
+	queued := 0
 	for _, id := range ids {
+		if !m.markScheduled(id) {
+			log.Printf("[ENQUEUE] Skipping already scheduled gallery: %s", id)
+			continue
+		}
+
 		select {
 		case m.jobCh <- id:
+			queued++
 			log.Printf("[ENQUEUE] Enqueued gallery: %s", id)
-		default:
-			log.Printf("[ENQUEUE] ERROR: queue full")
-			return fmt.Errorf("queue full")
+		case <-runCtx.Done():
+			m.unmarkScheduled(id)
+			return runCtx.Err()
 		}
 	}
-	log.Printf("[ENQUEUE] All %d galleries enqueued successfully", len(ids))
+
+	log.Printf("[ENQUEUE] Queued %d gallery downloads", queued)
 	return nil
 }
 
@@ -108,6 +129,14 @@ func (m *Manager) CurrentProgress() *models.DownloadProgress {
 	}
 
 	copy := *m.currentProgress
+	if isActiveProgressStatus(copy.Status) {
+		if !m.batchStartedAt.IsZero() {
+			copy.BatchElapsedMs = time.Since(m.batchStartedAt).Milliseconds()
+		}
+		if copy.GalleryID != "" && copy.GalleryID == m.currentGalleryID && !m.currentGalleryStarted.IsZero() {
+			copy.GalleryElapsedMs = time.Since(m.currentGalleryStarted).Milliseconds()
+		}
+	}
 	return &copy
 }
 
@@ -124,21 +153,50 @@ func (m *Manager) beginBatch() {
 	if !m.batchInProgress {
 		m.lastBatchSuccess = 0
 		m.lastBatchFailed = 0
+		m.batchStartedAt = time.Now()
+		m.currentProgress = nil
+		m.currentGalleryID = ""
+		m.currentGalleryStarted = time.Time{}
 	}
 	m.batchInProgress = true
 }
 
-func (m *Manager) setCurrentProgress(progress models.DownloadProgress) {
+func (m *Manager) setCurrentProgress(progress models.DownloadProgress) models.DownloadProgress {
 	m.stateMu.Lock()
 	defer m.stateMu.Unlock()
+	if progress.BatchElapsedMs == 0 && !m.batchStartedAt.IsZero() {
+		progress.BatchElapsedMs = time.Since(m.batchStartedAt).Milliseconds()
+	}
+	if progress.GalleryID != "" {
+		galleryChanged := m.currentGalleryID != progress.GalleryID
+		m.currentGalleryID = progress.GalleryID
+		if progress.GalleryElapsedMs > 0 {
+			m.currentGalleryStarted = time.Now().Add(-time.Duration(progress.GalleryElapsedMs) * time.Millisecond)
+		} else if galleryChanged || m.currentGalleryStarted.IsZero() {
+			m.currentGalleryStarted = time.Now()
+		}
+	}
 	copy := progress
 	m.currentProgress = &copy
+	return copy
+}
+
+func (m *Manager) publishProgress(progress models.DownloadProgress) {
+	progress = m.setCurrentProgress(progress)
+	select {
+	case m.progress <- progress:
+	default:
+	}
 }
 
 func (m *Manager) clearCurrentProgress() {
 	m.stateMu.Lock()
 	defer m.stateMu.Unlock()
 	m.currentProgress = nil
+	m.batchInProgress = false
+	m.batchStartedAt = time.Time{}
+	m.currentGalleryID = ""
+	m.currentGalleryStarted = time.Time{}
 }
 
 func (m *Manager) setActiveGallery(galleryID string, cancel context.CancelFunc) {
@@ -154,6 +212,25 @@ func (m *Manager) clearActiveGallery(galleryID string) {
 	m.stateMu.Lock()
 	defer m.stateMu.Unlock()
 	delete(m.currentCancels, galleryID)
+}
+
+func (m *Manager) markScheduled(galleryID string) bool {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+	if m.scheduledIDs == nil {
+		m.scheduledIDs = make(map[string]struct{})
+	}
+	if _, exists := m.scheduledIDs[galleryID]; exists {
+		return false
+	}
+	m.scheduledIDs[galleryID] = struct{}{}
+	return true
+}
+
+func (m *Manager) unmarkScheduled(galleryID string) {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+	delete(m.scheduledIDs, galleryID)
 }
 
 func (m *Manager) isShuttingDown() bool {
@@ -192,6 +269,7 @@ func (m *Manager) CancelDownloads() int {
 				m.clearCurrentProgress()
 				return clearedCount
 			}
+			m.unmarkScheduled(queuedID)
 			log.Printf("[DOWNLOADER] Removed queued gallery after cancel request: %s", queuedID)
 		default:
 			m.clearCurrentProgress()
@@ -216,9 +294,6 @@ func (m *Manager) galleryWorker(ctx context.Context) {
 	defer m.wg.Done()
 	log.Printf("[WORKER] Gallery worker started")
 
-	interGalleryDelay := time.Duration(m.config.DownloadDelay * float64(time.Second))
-	hasProcessedGallery := false
-
 	for {
 		select {
 		case galleryID, ok := <-m.jobCh:
@@ -227,26 +302,8 @@ func (m *Manager) galleryWorker(ctx context.Context) {
 				return
 			}
 
-			if hasProcessedGallery && interGalleryDelay > 0 {
-				log.Printf("[WORKER] Waiting %s before next gallery", interGalleryDelay)
-				timer := time.NewTimer(interGalleryDelay)
-				select {
-				case <-timer.C:
-				case <-ctx.Done():
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
-					log.Printf("[WORKER] Gallery worker exiting (context cancelled)")
-					return
-				}
-			}
-
 			log.Printf("[WORKER] Processing gallery: %s", galleryID)
 			m.processGallery(ctx, galleryID)
-			hasProcessedGallery = true
 
 		case <-ctx.Done():
 			log.Printf("[WORKER] Gallery worker exiting (context cancelled)")
@@ -257,21 +314,16 @@ func (m *Manager) galleryWorker(ctx context.Context) {
 
 func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 	jobCtx, jobCancel := context.WithCancel(ctx)
+	galleryStartedAt := time.Now()
 	m.setActiveGallery(galleryID, jobCancel)
 	defer func() {
 		jobCancel()
 		m.clearActiveGallery(galleryID)
+		m.unmarkScheduled(galleryID)
 	}()
 
 	log.Printf("[PROCESS] Starting download for gallery: %s", galleryID)
-	// Mark as downloading
-	if err := m.db.UpdateQueueStatus(galleryID, models.StatusDownloading, ""); err != nil {
-		log.Printf("[PROCESS] Failed to update queue status: %v", err)
-		return
-	}
-	log.Printf("[PROCESS] Status updated to downloading for: %s", galleryID)
 
-	// Get queue entry
 	entry, err := m.db.GetQueueByID(galleryID)
 	if err != nil {
 		log.Printf("Failed to get queue entry: %v", err)
@@ -282,8 +334,33 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 		log.Printf("Queue entry not found: %s", galleryID)
 		return
 	}
+	if entry.Status != models.StatusPending && entry.Status != models.StatusDownloading {
+		log.Printf("[PROCESS] Skipping gallery %s with status %s", galleryID, entry.Status)
+		return
+	}
 
-	// Fetch gallery metadata
+	if err := m.db.UpdateQueueStatus(galleryID, models.StatusDownloading, ""); err != nil {
+		log.Printf("[PROCESS] Failed to update queue status: %v", err)
+		return
+	}
+	log.Printf("[PROCESS] Status updated to downloading for: %s", galleryID)
+
+	displayTitle := galleryID
+	if trimmedTitle := strings.TrimSpace(entry.Title); trimmedTitle != "" {
+		displayTitle = trimmedTitle
+	}
+
+	preparingProgress := models.DownloadProgress{
+		GalleryID:        galleryID,
+		Title:            displayTitle,
+		CurrentPage:      0,
+		TotalPages:       0,
+		Percentage:       0,
+		Status:           "preparing",
+		GalleryElapsedMs: time.Since(galleryStartedAt).Milliseconds(),
+	}
+	m.publishProgress(preparingProgress)
+
 	gallery, err := m.nhentai.FetchGallery(jobCtx, galleryID)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -291,14 +368,44 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 			return
 		}
 		if errors.Is(err, nhentai.ErrGalleryNotFound) {
-			m.failGallery(galleryID, "Gallery not found")
+			m.notFoundGallery(galleryID, "Gallery not found")
 		} else {
 			m.failGallery(galleryID, err.Error())
 		}
 		return
 	}
 
-	// Check if already owned
+	delay := time.Duration(m.config.APIRequestDelay * float64(time.Second))
+	if delay > 0 {
+		log.Printf("[PROCESS] Courtesy wait after metadata fetch: %s", delay)
+		if !waitForContext(jobCtx, delay) {
+			m.cancelGallery(galleryID, "Cancelled by user")
+			return
+		}
+	}
+
+	if trimmedTitle := strings.TrimSpace(gallery.Title.Pretty); trimmedTitle != "" {
+		displayTitle = trimmedTitle
+	}
+
+	preparingProgress = models.DownloadProgress{
+		GalleryID:        galleryID,
+		Title:            displayTitle,
+		CurrentPage:      0,
+		TotalPages:       gallery.NumPages,
+		Percentage:       0,
+		Status:           "preparing",
+		GalleryElapsedMs: time.Since(galleryStartedAt).Milliseconds(),
+	}
+	m.publishProgress(preparingProgress)
+
+	artist := extractGalleryArtist(gallery)
+	go func(id, title, artist string) {
+		if err := m.db.UpdateQueueMetadata(id, title, artist); err != nil {
+			log.Printf("[PROCESS] Failed to update queue metadata: %v", err)
+		}
+	}(galleryID, displayTitle, artist)
+
 	owned, err := m.db.GetOwnedByMediaID(gallery.MediaID)
 	if err != nil {
 		log.Printf("Failed to check owned: %v", err)
@@ -306,12 +413,14 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 		return
 	}
 	if owned != nil {
-		m.db.UpdateQueueStatus(galleryID, models.StatusDuplicate, "")
+		if err := m.db.UpdateQueueStatus(galleryID, models.StatusDuplicate, ""); err != nil {
+			log.Printf("Failed to update status to duplicate: %v", err)
+		}
 		m.recordHistory(galleryID, "duplicate", "")
+		m.finishBatchIfIdle()
 		return
 	}
 
-	// Create temp directory
 	downloadPath := m.config.EffectiveDownloadPath()
 	if err := os.MkdirAll(downloadPath, 0755); err != nil {
 		log.Printf("[PROCESS] Failed to create download path: %v", err)
@@ -327,20 +436,15 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Download pages
-	tracker := NewProgressTracker(galleryID, gallery.Title.Pretty, gallery.NumPages)
+	tracker := NewProgressTracker(galleryID, displayTitle, gallery.NumPages)
 	var downloadedPages []string
 
 	err = downloadPages(jobCtx, m.nhentai, gallery.Pages, tempDir, m.config.PageWorkers, func(current, total int) {
 		tracker.Update(current)
 		progress := tracker.ToProgress()
-		m.setCurrentProgress(progress)
-		select {
-		case m.progress <- progress:
-		default:
-		}
+		progress.GalleryElapsedMs = time.Since(galleryStartedAt).Milliseconds()
+		m.publishProgress(progress)
 	})
-
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			log.Printf("[PROCESS] Download cancelled for gallery: %s", galleryID)
@@ -357,7 +461,17 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 		return
 	}
 
-	// Collect downloaded files
+	finalizingProgress := models.DownloadProgress{
+		GalleryID:        galleryID,
+		Title:            displayTitle,
+		CurrentPage:      gallery.NumPages,
+		TotalPages:       gallery.NumPages,
+		Percentage:       100,
+		Status:           "finalizing",
+		GalleryElapsedMs: time.Since(galleryStartedAt).Milliseconds(),
+	}
+	m.publishProgress(finalizingProgress)
+
 	files, err := filepath.Glob(filepath.Join(tempDir, "*"))
 	if err != nil {
 		log.Printf("Failed to list downloaded files: %v", err)
@@ -366,7 +480,6 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 	}
 	downloadedPages = files
 
-	// Build CBZ
 	buildInput := library.BuildInput{
 		Gallery:   gallery,
 		PageFiles: downloadedPages,
@@ -380,12 +493,14 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 		return
 	}
 
-	// Insert into owned
+	if artist == "" {
+		artist = result.ArtistFolder
+	}
 	ownedEntry := &models.OwnedEntry{
 		ID:      galleryID,
 		MediaID: gallery.MediaID,
-		Title:   gallery.Title.Pretty,
-		Artist:  result.ArtistFolder,
+		Title:   displayTitle,
+		Artist:  artist,
 		AddedAt: time.Now(),
 	}
 	if err := m.db.InsertOwned(ownedEntry); err != nil {
@@ -393,22 +508,42 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 		m.failGallery(galleryID, err.Error())
 		return
 	}
-
-	// Mark as done
-	tracker.Complete()
-	progress := tracker.ToProgress()
-	m.setCurrentProgress(progress)
-	select {
-	case m.progress <- progress:
-	default:
-	}
-	m.markBatchSuccess()
-
 	if err := m.db.UpdateQueueStatus(galleryID, models.StatusDone, ""); err != nil {
 		log.Printf("Failed to update status to done: %v", err)
+		m.failGallery(galleryID, err.Error())
+		return
 	}
 
-	m.recordHistory(galleryID, "success", "")
+	tracker.Complete()
+	progress := tracker.ToProgress()
+	progress.GalleryElapsedMs = time.Since(galleryStartedAt).Milliseconds()
+	m.publishProgress(progress)
+	m.markBatchSuccess()
+	go m.recordHistory(galleryID, "success", "")
+	m.finishBatchIfIdle()
+}
+
+func (m *Manager) finishBatchIfIdle() {
+	pendingCount, err := m.db.CountQueueByStatus(models.StatusPending)
+	if err != nil {
+		log.Printf("[DOWNLOADER] Failed to count pending queue items: %v", err)
+		return
+	}
+
+	downloadingCount, err := m.db.CountQueueByStatus(models.StatusDownloading)
+	if err != nil {
+		log.Printf("[DOWNLOADER] Failed to count active downloads: %v", err)
+		return
+	}
+
+	if pendingCount == 0 && downloadingCount == 0 {
+		m.stateMu.Lock()
+		m.batchInProgress = false
+		m.batchStartedAt = time.Time{}
+		m.currentGalleryID = ""
+		m.currentGalleryStarted = time.Time{}
+		m.stateMu.Unlock()
+	}
 }
 
 func (m *Manager) cancelGallery(galleryID, reason string) {
@@ -426,11 +561,7 @@ func (m *Manager) cancelGallery(galleryID, reason string) {
 		Percentage:  0,
 		Status:      "cancelled",
 	}
-	m.setCurrentProgress(progress)
-	select {
-	case m.progress <- progress:
-	default:
-	}
+	m.publishProgress(progress)
 	m.clearCurrentProgress()
 
 	if m.isShuttingDown() {
@@ -447,6 +578,26 @@ func (m *Manager) cancelGallery(galleryID, reason string) {
 	m.recordHistory(galleryID, "cancelled", reason)
 }
 
+func (m *Manager) notFoundGallery(galleryID, errorMsg string) {
+	entry, _ := m.db.GetQueueByID(galleryID)
+	title := galleryID
+	if entry != nil && entry.Title != "" {
+		title = entry.Title
+	}
+
+	tracker := NewProgressTracker(galleryID, title, 0)
+	tracker.Fail()
+	progress := tracker.ToProgress()
+	m.publishProgress(progress)
+	m.markBatchFailure()
+
+	if err := m.db.UpdateQueueStatus(galleryID, models.StatusNotFound, errorMsg); err != nil {
+		log.Printf("Failed to update status to not_found: %v", err)
+	}
+	m.recordHistory(galleryID, "not_found", errorMsg)
+	m.finishBatchIfIdle()
+}
+
 func (m *Manager) failGallery(galleryID, errorMsg string) {
 	entry, _ := m.db.GetQueueByID(galleryID)
 	title := galleryID
@@ -457,17 +608,14 @@ func (m *Manager) failGallery(galleryID, errorMsg string) {
 	tracker := NewProgressTracker(galleryID, title, 0)
 	tracker.Fail()
 	progress := tracker.ToProgress()
-	m.setCurrentProgress(progress)
-	select {
-	case m.progress <- progress:
-	default:
-	}
+	m.publishProgress(progress)
 	m.markBatchFailure()
 
 	if err := m.db.UpdateQueueStatus(galleryID, models.StatusFailed, errorMsg); err != nil {
 		log.Printf("Failed to update status to failed: %v", err)
 	}
 	m.recordHistory(galleryID, "failed", errorMsg)
+	m.finishBatchIfIdle()
 }
 
 func (m *Manager) recordHistory(galleryID, status, errorMsg string) {
@@ -479,5 +627,46 @@ func (m *Manager) recordHistory(galleryID, status, errorMsg string) {
 	}
 	if err := m.db.InsertHistory(entry); err != nil {
 		log.Printf("Failed to record history: %v", err)
+	}
+}
+
+func extractGalleryArtist(gallery *nhentai.Gallery) string {
+	if gallery == nil {
+		return ""
+	}
+	for _, tag := range gallery.Tags {
+		if tag.Type == "artist" {
+			return tag.Name
+		}
+	}
+	for _, tag := range gallery.Tags {
+		if tag.Type == "group" {
+			return tag.Name
+		}
+	}
+	return ""
+}
+
+func isActiveProgressStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "downloading", "preparing", "waiting", "finalizing":
+		return true
+	default:
+		return false
+	}
+}
+
+func waitForContext(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return true
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }

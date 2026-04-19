@@ -14,6 +14,7 @@ const state = {
 let statusTimer = null;
 let progressStream = null;
 let hideResultTimer = null;
+let progressReconnectTimer = null;
 
 const statusPill = document.getElementById('status-pill');
 const statusText = document.getElementById('status-text');
@@ -24,6 +25,8 @@ const progressFill = document.getElementById('progress-fill');
 const pageCount = document.getElementById('page-count');
 const queueCountLabel = document.getElementById('queue-count');
 const progressPercent = document.getElementById('progress-percent');
+const batchTimer = document.getElementById('batch-timer');
+const galleryTimer = document.getElementById('gallery-timer');
 const versionLabel = document.getElementById('app-version');
 
 function clampPercent(value) {
@@ -51,14 +54,30 @@ function normalizeProgress(data) {
     total_pages: Number(data.total_pages || 0),
     percentage: clampPercent(data.percentage),
     queue_count: Math.max(0, Number(data.queue_count || state.queueCount || 0)),
-    status: String(data.status || 'downloading').toLowerCase()
+    status: String(data.status || 'downloading').toLowerCase(),
+    gallery_elapsed_ms: Math.max(0, Number(data.gallery_elapsed_ms || 0)),
+    batch_elapsed_ms: Math.max(0, Number(data.batch_elapsed_ms || 0))
   };
+}
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function clearResultTimer() {
   if (hideResultTimer) {
     clearTimeout(hideResultTimer);
     hideResultTimer = null;
+  }
+}
+
+function clearProgressReconnectTimer() {
+  if (progressReconnectTimer) {
+    clearTimeout(progressReconnectTimer);
+    progressReconnectTimer = null;
   }
 }
 
@@ -70,10 +89,14 @@ function scheduleHideResult(delay = 2000) {
   }, delay);
 }
 
-function renderRunningState() {
-  const isDownloading = state.downloading || state.activeDownload?.status === 'downloading';
+function isWorkingStatus(status) {
+  return ['downloading', 'preparing', 'waiting', 'finalizing'].includes(String(status || '').toLowerCase());
+}
 
-  statusText.textContent = state.running ? 'Running' : 'Stopped';
+function renderRunningState() {
+  const isDownloading = state.downloading || isWorkingStatus(state.activeDownload?.status);
+
+  statusText.textContent = state.running ? (isDownloading ? 'Working' : 'Running') : 'Stopped';
   statusPill.classList.toggle('running', state.running);
 
   toggleButton.textContent = !state.running ? 'Start' : isDownloading ? 'Cancel' : 'Stop';
@@ -86,12 +109,15 @@ function renderDownloadState() {
   const queueCount = Math.max(0, Number(download?.queue_count || state.queueCount || 0));
 
   if (!download) {
-    downloadCard.dataset.state = 'idle';
-    downloadTitle.textContent = 'No active download';
-    progressFill.style.width = '0%';
-    pageCount.textContent = state.running ? 'Waiting for the next job' : 'Start the app to begin';
+    const isPreparing = state.running && (queueCount > 0 || state.downloading);
+    downloadCard.dataset.state = isPreparing ? 'preparing' : 'idle';
+    downloadTitle.textContent = isPreparing ? 'Starting download…' : 'No active download';
+    progressFill.style.width = isPreparing ? '18%' : '0%';
+    pageCount.textContent = isPreparing ? 'The backend is working — waiting for live progress' : state.running ? 'Waiting for the next job' : 'Start the app to begin';
     queueCountLabel.textContent = formatQueueCount(queueCount);
-    progressPercent.textContent = state.running ? 'Ready' : 'Idle';
+    progressPercent.textContent = isPreparing ? 'Loading' : state.running ? 'Ready' : 'Idle';
+    batchTimer.textContent = isPreparing ? 'Batch 00:00' : 'Batch --:--';
+    galleryTimer.textContent = isPreparing ? 'Gallery 00:00' : 'Gallery --:--';
     return;
   }
 
@@ -104,6 +130,8 @@ function renderDownloadState() {
   downloadTitle.textContent = title;
   downloadCard.dataset.state = status;
   queueCountLabel.textContent = formatQueueCount(queueCount);
+  batchTimer.textContent = `Batch ${formatDuration(download.batch_elapsed_ms)}`;
+  galleryTimer.textContent = `Gallery ${formatDuration(download.gallery_elapsed_ms)}`;
 
   if (status === 'failed') {
     progressFill.style.width = '100%';
@@ -117,6 +145,14 @@ function renderDownloadState() {
     progressFill.style.width = '100%';
     pageCount.textContent = `${currentPage || totalPages} / ${totalPages} pages`;
     progressPercent.textContent = 'Done';
+  } else if (status === 'preparing' || status === 'waiting') {
+    progressFill.style.width = '18%';
+    pageCount.textContent = 'Loading the next gallery…';
+    progressPercent.textContent = 'Loading';
+  } else if (status === 'finalizing') {
+    progressFill.style.width = '100%';
+    pageCount.textContent = 'All pages downloaded — building CBZ…';
+    progressPercent.textContent = 'Finalizing';
   } else {
     progressFill.style.width = `${percent}%`;
     pageCount.textContent = `${currentPage} / ${totalPages} pages`;
@@ -142,11 +178,23 @@ async function fetchStatus() {
     state.downloading = Boolean(data.downloading);
     state.queueCount = Math.max(0, Number(data.queue_count || 0));
 
-    if (data.downloading && data.current_job) {
+    if (data.current_job) {
       clearResultTimer();
       state.activeDownload = normalizeProgress(data.current_job);
-    } else if (!data.downloading && (!state.activeDownload || state.activeDownload.status === 'downloading')) {
+    } else if (data.downloading) {
+      state.activeDownload = normalizeProgress({
+        title: 'Download in progress',
+        status: 'preparing',
+        queue_count: data.queue_count || state.queueCount,
+        batch_elapsed_ms: state.activeDownload?.batch_elapsed_ms || 0,
+        gallery_elapsed_ms: 0
+      });
+    } else {
       state.activeDownload = null;
+    }
+
+    if (state.visible && !progressStream) {
+      connectProgressStream();
     }
 
     render();
@@ -155,27 +203,48 @@ async function fetchStatus() {
       return;
     }
 
-    state.running = false;
-    state.downloading = false;
-    state.queueCount = 0;
-    if (!state.activeDownload || state.activeDownload.status === 'downloading') {
-      state.activeDownload = null;
+    scheduleProgressReconnect(500);
+    if (!state.running) {
+      state.downloading = false;
+      state.queueCount = 0;
+      if (!state.activeDownload || isWorkingStatus(state.activeDownload.status)) {
+        state.activeDownload = null;
+      }
     }
     render();
   }
 }
 
 function disconnectProgressStream() {
+  clearProgressReconnectTimer();
   if (progressStream) {
     progressStream.close();
     progressStream = null;
   }
 }
 
+function scheduleProgressReconnect(delay = 1000) {
+  if (progressReconnectTimer || !state.visible) {
+    return;
+  }
+
+  progressReconnectTimer = setTimeout(() => {
+    progressReconnectTimer = null;
+    if (state.visible && !progressStream) {
+      connectProgressStream();
+    }
+  }, delay);
+}
+
 function connectProgressStream() {
-  disconnectProgressStream();
+  if (!state.visible || progressStream) {
+    return;
+  }
 
   progressStream = new EventSource(`http://127.0.0.1:${state.port}/api/download/progress`);
+  progressStream.onopen = () => {
+    clearProgressReconnectTimer();
+  };
 
   progressStream.onmessage = (event) => {
     if (!event.data) {
@@ -192,10 +261,7 @@ function connectProgressStream() {
       state.activeDownload = progress;
 
       if (progress.status === 'cancelled') {
-        state.activeDownload = null;
         clearResultTimer();
-      } else if (progress.status === 'done' || progress.status === 'failed') {
-        scheduleHideResult();
       } else {
         clearResultTimer();
       }
@@ -207,7 +273,11 @@ function connectProgressStream() {
   };
 
   progressStream.onerror = () => {
-    disconnectProgressStream();
+    if (progressStream) {
+      progressStream.close();
+      progressStream = null;
+    }
+    scheduleProgressReconnect();
   };
 }
 
@@ -248,7 +318,7 @@ appBridge?.on(CHANNELS.TRAY_VISIBILITY, (visible) => {
 });
 
 document.getElementById('toggle-backend').addEventListener('click', () => {
-  const isDownloading = state.downloading || state.activeDownload?.status === 'downloading';
+  const isDownloading = state.downloading || isWorkingStatus(state.activeDownload?.status);
 
   if (isDownloading) {
     appBridge?.send(CHANNELS.TRAY_CANCEL_DOWNLOADS);

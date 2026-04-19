@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -25,12 +26,11 @@ func main() {
 	flag.Parse()
 
 	if *configPath == "" {
-		// Default config path
-		configDir, err := os.UserConfigDir()
+		resolvedConfigPath, err := resolveDefaultConfigPath()
 		if err != nil {
-			log.Fatal("Failed to get config dir:", err)
+			log.Fatal("Failed to resolve config path:", err)
 		}
-		*configPath = filepath.Join(configDir, "doujinshi-manager", "config.json")
+		*configPath = resolvedConfigPath
 	}
 
 	cfg, err := config.LoadConfig(*configPath)
@@ -52,7 +52,7 @@ func main() {
 	defer db.Close()
 
 	// Initialize nhentai client
-	nhentaiClient := nhentai.NewClient(cfg.APIRequestDelay, cfg.PageWorkers)
+	nhentaiClient := nhentai.NewClient()
 
 	// Initialize library components
 	libraryBuilder := library.NewBuilder(cfg.LibraryPath)
@@ -98,4 +98,77 @@ func main() {
 	cancelRuntime()
 	downloaderManager.Stop()
 	log.Println("Server exited")
+}
+
+func resolveDefaultConfigPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	newDir := filepath.Join(configDir, "Full Swing")
+	legacyDir := filepath.Join(configDir, "doujinshi-manager")
+	if err := migrateLegacyAppData(legacyDir, newDir); err != nil {
+		log.Printf("[WARN] failed to migrate legacy app data: %v", err)
+	}
+
+	return filepath.Join(newDir, "config.json"), nil
+}
+
+func migrateLegacyAppData(legacyDir, newDir string) error {
+	if legacyDir == newDir {
+		return nil
+	}
+	if _, err := os.Stat(legacyDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := os.MkdirAll(newDir, 0755); err != nil {
+		return err
+	}
+
+	for _, name := range []string{"config.json", "doujinshi.db"} {
+		srcPath := filepath.Join(legacyDir, name)
+		dstPath := filepath.Join(newDir, name)
+		if err := copyFileIfMissing(srcPath, dstPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyFileIfMissing(srcPath, dstPath string) error {
+	if _, err := os.Stat(dstPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if _, err := os.Stat(srcPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+		return err
+	}
+	dstFile, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return err
+	}
+	return nil
 }

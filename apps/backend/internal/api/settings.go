@@ -18,7 +18,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		PageWorkers     *int     `json:"page_workers"`
 		GalleryWorkers  *int     `json:"gallery_workers"`
 		APIRequestDelay *float64 `json:"api_request_delay"`
-		DownloadDelay   *float64 `json:"download_delay"`
 		ServerPort      *int     `json:"server_port"`
 	}
 	if err := decodeJSONBody(r, &updates); err != nil {
@@ -42,9 +41,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if updates.APIRequestDelay != nil {
 		nextConfig.APIRequestDelay = *updates.APIRequestDelay
 	}
-	if updates.DownloadDelay != nil {
-		nextConfig.DownloadDelay = *updates.DownloadDelay
-	}
 	if updates.ServerPort != nil {
 		nextConfig.ServerPort = *updates.ServerPort
 	}
@@ -67,7 +63,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"page_workers":      s.config.PageWorkers,
 		"gallery_workers":   s.config.GalleryWorkers,
 		"api_request_delay": s.config.APIRequestDelay,
-		"download_delay":    s.config.DownloadDelay,
 		"server_port":       s.config.ServerPort,
 		"limits": map[string]interface{}{
 			"page_workers":    []int{config.MinPageWorkers, config.MaxPageWorkers},

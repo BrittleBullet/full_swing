@@ -9,14 +9,13 @@ import (
 )
 
 const (
-	DefaultPageWorkers     = 5
+	DefaultPageWorkers     = 10
 	MinPageWorkers         = 1
 	MaxPageWorkers         = 20
-	DefaultGalleryWorkers  = 1
+	DefaultGalleryWorkers  = 2
 	MinGalleryWorkers      = 1
 	MaxGalleryWorkers      = 5
-	DefaultAPIRequestDelay = 1.0
-	DefaultDownloadDelay   = 0.5
+	DefaultAPIRequestDelay = 0.25
 	MinDelaySeconds        = 0.0
 	MaxDelaySeconds        = 60.0
 	DefaultServerPort      = 8080
@@ -31,7 +30,6 @@ type Config struct {
 	PageWorkers     int     `json:"page_workers"`
 	GalleryWorkers  int     `json:"gallery_workers"`
 	APIRequestDelay float64 `json:"api_request_delay"`
-	DownloadDelay   float64 `json:"download_delay"`
 	ServerPort      int     `json:"server_port"`
 }
 
@@ -43,7 +41,6 @@ func DefaultConfig() *Config {
 		PageWorkers:     DefaultPageWorkers,
 		GalleryWorkers:  DefaultGalleryWorkers,
 		APIRequestDelay: DefaultAPIRequestDelay,
-		DownloadDelay:   DefaultDownloadDelay,
 		ServerPort:      DefaultServerPort,
 	}
 	cfg.EnsureDefaults()
@@ -79,9 +76,6 @@ func (c *Config) EnsureDefaults() {
 	if c.APIRequestDelay < MinDelaySeconds {
 		c.APIRequestDelay = DefaultAPIRequestDelay
 	}
-	if c.DownloadDelay < MinDelaySeconds {
-		c.DownloadDelay = DefaultDownloadDelay
-	}
 	if c.ServerPort <= 0 {
 		c.ServerPort = DefaultServerPort
 	}
@@ -102,9 +96,6 @@ func (c *Config) Validate() error {
 	}
 	if c.APIRequestDelay < MinDelaySeconds || c.APIRequestDelay > MaxDelaySeconds {
 		return fmt.Errorf("api request delay must be between 0 and 60 seconds")
-	}
-	if c.DownloadDelay < MinDelaySeconds || c.DownloadDelay > MaxDelaySeconds {
-		return fmt.Errorf("download delay must be between 0 and 60 seconds")
 	}
 	if c.ServerPort < MinServerPort || c.ServerPort > MaxServerPort {
 		return fmt.Errorf("server port must be between %d and %d", MinServerPort, MaxServerPort)

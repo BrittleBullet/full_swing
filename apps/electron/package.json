@@ -5,8 +5,10 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable --x64",
-    "pack:win": "electron-packager . \"Doujinshi Manager\" --platform=win32 --arch=x64 --icon=../../assets/icons/icon.ico --out=../../release --overwrite --asar --extra-resource=../backend/doujinshi-manager.exe --extra-resource=../../assets/icons"
+    "build:backend": "cd ../backend && set GOOS=windows&& set GOARCH=amd64&& go build -o doujinshi-manager.exe ./cmd/server",
+    "build": "npm run build:backend && electron-builder --win",
+    "dist": "npm run build",
+    "pack:win": "npm run build"
   },
   "devDependencies": {
     "electron": "41.2.1",
@@ -14,11 +16,11 @@
     "electron-packager": "^17.1.2"
   },
   "build": {
-    "appId": "com.fullswing.doujinshi-manager",
-    "productName": "Doujinshi Manager",
+    "appId": "com.fullswing.manager",
+    "productName": "Full Swing",
     "asar": true,
     "directories": {
-      "output": "../../release"
+      "output": "../../dist"
     },
     "files": [
       "*.js",
@@ -28,7 +30,7 @@
     "extraResources": [
       {
         "from": "../backend/doujinshi-manager.exe",
-        "to": "backend/doujinshi-manager.exe"
+        "to": "doujinshi-manager.exe"
       },
       {
         "from": "../../assets/icons",
@@ -37,7 +39,14 @@
     ],
     "win": {
       "icon": "../../assets/icons/icon.ico",
+      "signAndEditExecutable": false,
       "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
         {
           "target": "portable",
           "arch": [
@@ -46,6 +55,17 @@
         }
       ]
     },
-    "artifactName": "Doujinshi-Manager-${version}-portable.${ext}"
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Full Swing",
+      "uninstallDisplayName": "Full Swing",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "Full-Swing-${version}-portable.exe"
+    }
   }
 }

@@ -33,29 +33,31 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Current job from live downloader progress when available.
+	// Current or most recent job from live downloader progress when available.
 	var currentJob interface{}
-	if downloadingCount > 0 {
-		if progress := s.downloader.CurrentProgress(); progress != nil {
+	if progress := s.downloader.CurrentProgress(); progress != nil {
+		currentJob = map[string]interface{}{
+			"id":                 progress.GalleryID,
+			"title":              progress.Title,
+			"current_page":       progress.CurrentPage,
+			"total_pages":        progress.TotalPages,
+			"percentage":         progress.Percentage,
+			"status":             progress.Status,
+			"gallery_elapsed_ms": progress.GalleryElapsedMs,
+			"batch_elapsed_ms":   progress.BatchElapsedMs,
+		}
+	} else if downloadingCount > 0 {
+		entries, err := s.db.ListQueue(models.StatusDownloading)
+		if err == nil && len(entries) > 0 {
 			currentJob = map[string]interface{}{
-				"id":           progress.GalleryID,
-				"title":        progress.Title,
-				"current_page": progress.CurrentPage,
-				"total_pages":  progress.TotalPages,
-				"percentage":   progress.Percentage,
-				"status":       progress.Status,
-			}
-		} else {
-			entries, err := s.db.ListQueue(models.StatusDownloading)
-			if err == nil && len(entries) > 0 {
-				currentJob = map[string]interface{}{
-					"id":           entries[0].ID,
-					"title":        entries[0].Title,
-					"current_page": 0,
-					"total_pages":  0,
-					"percentage":   0,
-					"status":       "downloading",
-				}
+				"id":                 entries[0].ID,
+				"title":              entries[0].Title,
+				"current_page":       0,
+				"total_pages":        0,
+				"percentage":         0,
+				"status":             "downloading",
+				"gallery_elapsed_ms": 0,
+				"batch_elapsed_ms":   0,
 			}
 		}
 	}
@@ -64,7 +66,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	response := map[string]interface{}{
 		"running":            true,
-		"queue_count":        queueCount,
+		"queue_count":        queueCount + downloadingCount,
 		"owned_count":        ownedCount,
 		"failed_count":       failedCount,
 		"downloading":        downloadingCount > 0,

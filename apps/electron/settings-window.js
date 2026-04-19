@@ -23,10 +23,9 @@ function setStatus(message, isError = false) {
 
 function populateForm() {
   document.getElementById('library-path-input').value = config.library_path || '';
-  document.getElementById('page-workers').value = config.page_workers || 5;
-  document.getElementById('gallery-workers').value = config.gallery_workers || 1;
-  document.getElementById('api-delay').value = config.api_request_delay || 1.0;
-  document.getElementById('download-delay').value = config.download_delay || 0.5;
+  document.getElementById('page-workers').value = config.page_workers || 10;
+  document.getElementById('gallery-workers').value = config.gallery_workers || 2;
+  document.getElementById('api-delay').value = config.api_request_delay || 0.25;
   document.getElementById('server-port').value = config.server_port || 8080;
 }
 
@@ -47,6 +46,8 @@ async function selectLibraryPath() {
 function saveConfig() {
   config.library_path = document.getElementById('library-path-input').value.trim();
   delete config.download_path;
+  delete config.image_request_delay;
+  delete config.download_delay;
 
   if (!config.library_path) {
     setStatus('Library path is required.', true);
@@ -57,7 +58,6 @@ function saveConfig() {
   config.page_workers = parseInt(document.getElementById('page-workers').value, 10);
   config.gallery_workers = parseInt(document.getElementById('gallery-workers').value, 10);
   config.api_request_delay = parseFloat(document.getElementById('api-delay').value);
-  config.download_delay = parseFloat(document.getElementById('download-delay').value);
   config.server_port = parseInt(document.getElementById('server-port').value, 10);
 
   setStatus('Saving...');

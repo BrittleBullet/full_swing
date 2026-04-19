@@ -176,7 +176,7 @@ func (db *DB) ListOwnedIDs() ([]string, error) {
 // Queue operations
 func (db *DB) InsertQueue(entry *models.QueueEntry) error {
 	return db.execWithRetry(`
-		INSERT INTO queue (id, title, artist, status, error, added_at, updated_at)
+		INSERT OR IGNORE INTO queue (id, title, artist, status, error, added_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		entry.ID, entry.Title, entry.Artist, entry.Status, entry.Error, entry.AddedAt, entry.UpdatedAt)
 }
@@ -188,7 +188,7 @@ func (db *DB) InsertQueueBatch(entries []*models.QueueEntry) error {
 
 	return db.withTransaction(func(tx *sql.Tx) error {
 		stmt, err := tx.Prepare(`
-			INSERT INTO queue (id, title, artist, status, error, added_at, updated_at)
+			INSERT OR IGNORE INTO queue (id, title, artist, status, error, added_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`)
 		if err != nil {
 			return err
@@ -220,6 +220,12 @@ func (db *DB) GetQueueByID(id string) (*models.QueueEntry, error) {
 		return nil, nil
 	}
 	return &entry, err
+}
+
+func (db *DB) UpdateQueueMetadata(id, title, artist string) error {
+	return db.execWithRetry(`
+		UPDATE queue SET title = ?, artist = ?, updated_at = ? WHERE id = ?`,
+		title, artist, time.Now(), id)
 }
 
 func (db *DB) ListQueue(statusFilter models.GalleryStatus) ([]models.QueueEntry, error) {

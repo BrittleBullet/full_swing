@@ -147,6 +147,16 @@
       border-color: rgba(46, 204, 113, 0.32);
     }
 
+    .download-card[data-state="preparing"] {
+      border-color: rgba(255, 184, 77, 0.4);
+      background: rgba(255, 184, 77, 0.06);
+    }
+
+    .download-card[data-state="finalizing"] {
+      border-color: rgba(96, 165, 250, 0.42);
+      background: rgba(96, 165, 250, 0.08);
+    }
+
     .download-card[data-state="failed"] {
       border-color: rgba(255, 46, 85, 0.38);
     }
@@ -186,10 +196,33 @@
       transition: width 0.16s ease;
     }
 
+    .download-card[data-state="preparing"] .progress-fill {
+      background: linear-gradient(90deg, #ffb84d, var(--accent));
+      animation: loadingPulse 1s ease-in-out infinite alternate;
+    }
+
+    .download-card[data-state="finalizing"] .progress-fill {
+      background: linear-gradient(90deg, #60a5fa, #8b5cf6);
+      animation: loadingPulse 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes loadingPulse {
+      from { opacity: 0.55; }
+      to { opacity: 1; }
+    }
+
     .progress-meta {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto auto;
       align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .timer-row {
+      display: flex;
+      justify-content: space-between;
       gap: 8px;
       font-size: 11px;
       color: var(--muted);
@@ -296,6 +329,10 @@
           <span id="page-count">Waiting for the next job</span>
           <span id="queue-count">0 queued</span>
           <span id="progress-percent">Idle</span>
+        </div>
+        <div class="timer-row">
+          <span id="batch-timer">Batch --:--</span>
+          <span id="gallery-timer">Gallery --:--</span>
         </div>
       </div>
 

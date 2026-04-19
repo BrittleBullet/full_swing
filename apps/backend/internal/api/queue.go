@@ -1,8 +1,6 @@
 package api
 
 import (
-	"context"
-	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -10,7 +8,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"doujinshi-manager/internal/models"
-	"doujinshi-manager/internal/nhentai"
 )
 
 func (s *Server) handleListQueue(w http.ResponseWriter, r *http.Request) {
@@ -45,12 +42,22 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	added := 0
 	skippedOwned := 0
 	skippedDuplicate := 0
 	pendingEntries := make([]*models.QueueEntry, 0, len(validatedIDs))
+	now := time.Now()
 
 	for _, id := range validatedIDs {
+		owned, err := s.db.GetOwnedByID(id)
+		if err != nil {
+			writeInternalError(w, r, "failed to check owned state", err)
+			return
+		}
+		if owned != nil {
+			skippedOwned++
+			continue
+		}
+
 		entry, err := s.db.GetQueueByID(id)
 		if err != nil {
 			writeInternalError(w, r, "failed to check existing queue entry", err)
@@ -61,37 +68,8 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		fetchCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		gallery, err := s.nhentai.FetchGallery(fetchCtx, id)
-		cancel()
-		if err != nil {
-			if errors.Is(err, nhentai.ErrGalleryNotFound) {
-				skippedOwned++
-				continue
-			}
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				log.Printf("[WARN] timed out while fetching gallery metadata for %s", id)
-				continue
-			}
-			writeInternalError(w, r, "failed to fetch gallery metadata", err)
-			return
-		}
-
-		owned, err := s.db.GetOwnedByMediaID(gallery.MediaID)
-		if err != nil {
-			writeInternalError(w, r, "failed to check owned state", err)
-			return
-		}
-		if owned != nil {
-			skippedOwned++
-			continue
-		}
-
-		now := time.Now()
 		pendingEntries = append(pendingEntries, &models.QueueEntry{
 			ID:        id,
-			Title:     gallery.Title.Pretty,
-			Artist:    extractArtist(gallery),
 			Status:    models.StatusPending,
 			AddedAt:   now,
 			UpdatedAt: now,
@@ -102,10 +80,9 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, r, "failed to insert queued galleries", err)
 		return
 	}
-	added = len(pendingEntries)
 
 	writeJSON(w, http.StatusOK, map[string]int{
-		"added":             added,
+		"added":             len(pendingEntries),
 		"skipped_owned":     skippedOwned,
 		"skipped_duplicate": skippedDuplicate,
 	})
@@ -136,18 +113,4 @@ func (s *Server) handleClearQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"cleared": count})
-}
-
-func extractArtist(gallery *nhentai.Gallery) string {
-	for _, tag := range gallery.Tags {
-		if tag.Type == "artist" {
-			return tag.Name
-		}
-	}
-	for _, tag := range gallery.Tags {
-		if tag.Type == "group" {
-			return tag.Name
-		}
-	}
-	return ""
 }

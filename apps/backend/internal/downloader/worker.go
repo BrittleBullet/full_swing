@@ -3,7 +3,6 @@ package downloader
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -114,12 +113,6 @@ func worker(ctx context.Context, client *nhentai.Client, jobs <-chan downloadJob
 }
 
 func downloadPage(ctx context.Context, client *nhentai.Client, job downloadJob) (string, error) {
-	// Download the page
-	data, err := client.DownloadPage(ctx, job.page.Path)
-	if err != nil {
-		return "", fmt.Errorf("failed to download page %d: %w", job.page.Number, err)
-	}
-
 	// Determine filename
 	ext := filepath.Ext(job.page.Path)
 	if ext == "" {
@@ -128,9 +121,8 @@ func downloadPage(ctx context.Context, client *nhentai.Client, job downloadJob) 
 	filename := fmt.Sprintf("%03d%s", job.index+1, ext)
 	filePath := filepath.Join(job.destDir, filename)
 
-	// Write to file
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		return "", fmt.Errorf("failed to write page %d: %w", job.page.Number, err)
+	if err := client.DownloadPage(ctx, job.page.Path, filePath); err != nil {
+		return "", fmt.Errorf("failed to download page %d: %w", job.page.Number, err)
 	}
 
 	return filePath, nil

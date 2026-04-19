@@ -5,6 +5,44 @@ const fs = require('fs');
 const http = require('http');
 const CHANNELS = require('./ipc-channels');
 
+const APP_DISPLAY_NAME = 'Full Swing';
+const APP_USER_MODEL_ID = 'com.fullswing.manager';
+const LEGACY_APP_DIR_NAME = 'doujinshi-manager';
+const APP_STATE_FILES = ['config.json', 'doujinshi.db'];
+
+app.setName(APP_DISPLAY_NAME);
+
+function resolveCanonicalUserDataPath() {
+  return path.join(app.getPath('appData'), APP_DISPLAY_NAME);
+}
+
+function migrateLegacyUserData() {
+  const canonicalDir = resolveCanonicalUserDataPath();
+  const legacyDir = path.join(app.getPath('appData'), LEGACY_APP_DIR_NAME);
+
+  fs.mkdirSync(canonicalDir, { recursive: true });
+
+  if (canonicalDir.toLowerCase() === legacyDir.toLowerCase() || !fs.existsSync(legacyDir)) {
+    return canonicalDir;
+  }
+
+  for (const fileName of APP_STATE_FILES) {
+    const legacyPath = path.join(legacyDir, fileName);
+    const canonicalPath = path.join(canonicalDir, fileName);
+    if (!fs.existsSync(canonicalPath) && fs.existsSync(legacyPath)) {
+      fs.copyFileSync(legacyPath, canonicalPath);
+    }
+  }
+
+  return canonicalDir;
+}
+
+try {
+  app.setPath('userData', migrateLegacyUserData());
+} catch {
+  // Fall back to Electron's default path if migration cannot complete during startup.
+}
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -67,7 +105,6 @@ function validateConfigShape(candidate) {
   const pageWorkers = Number(candidate.page_workers || 0);
   const galleryWorkers = Number(candidate.gallery_workers || 0);
   const apiRequestDelay = Number(candidate.api_request_delay || 0);
-  const downloadDelay = Number(candidate.download_delay || 0);
   const serverPort = Number(candidate.server_port || 0);
 
   if (!Number.isInteger(pageWorkers) || pageWorkers < 1 || pageWorkers > 20) {
@@ -79,31 +116,24 @@ function validateConfigShape(candidate) {
   if (!Number.isFinite(apiRequestDelay) || apiRequestDelay < 0 || apiRequestDelay > 60) {
     throw new Error('API request delay must be between 0 and 60 seconds.');
   }
-  if (!Number.isFinite(downloadDelay) || downloadDelay < 0 || downloadDelay > 60) {
-    throw new Error('Download delay must be between 0 and 60 seconds.');
-  }
   if (!Number.isInteger(serverPort) || serverPort < 1024 || serverPort > 65535) {
     throw new Error('Server port must be between 1024 and 65535.');
   }
 
   const validated = {
-    ...candidate,
     library_path: path.resolve(libraryPath),
     page_workers: pageWorkers,
     gallery_workers: galleryWorkers,
     api_request_delay: apiRequestDelay,
-    download_delay: downloadDelay,
     server_port: serverPort
   };
 
-  if (typeof validated.download_path === 'string' && validated.download_path.trim()) {
-    const resolvedDownloadPath = path.resolve(validated.download_path.trim());
+  if (typeof candidate.download_path === 'string' && candidate.download_path.trim()) {
+    const resolvedDownloadPath = path.resolve(candidate.download_path.trim());
     if (!fs.existsSync(resolvedDownloadPath) || !fs.statSync(resolvedDownloadPath).isDirectory()) {
       throw new Error('Download path must point to an existing directory.');
     }
     validated.download_path = resolvedDownloadPath;
-  } else {
-    delete validated.download_path;
   }
 
   return validated;
@@ -124,15 +154,17 @@ function getAssetsIconRoot() {
   return path.join(__dirname, '..', '..', 'assets', 'icons');
 }
 
+const binaryName = 'doujinshi-manager.exe';
+
 function getBackendExecutablePath() {
   if (app.isPackaged) {
     return findFirstExistingPath([
-      path.join(process.resourcesPath, 'backend', 'doujinshi-manager.exe'),
-      path.join(process.resourcesPath, 'doujinshi-manager.exe')
+      path.join(process.resourcesPath, binaryName),
+      path.join(process.resourcesPath, 'backend', binaryName)
     ]);
   }
 
-  return path.join(__dirname, '..', 'backend', 'doujinshi-manager.exe');
+  return path.join(__dirname, '..', 'backend', binaryName);
 }
 
 function getAppIconPath() {
@@ -157,7 +189,7 @@ function createTray() {
   const icon = iconPath ? nativeImage.createFromPath(iconPath) : null;
 
   tray = new Tray(icon && !icon.isEmpty() ? icon : nativeImage.createEmpty());
-  tray.setToolTip('Doujinshi Manager');
+  tray.setToolTip(APP_DISPLAY_NAME);
 
   if (iconPath) {
     addLog(`Using app icon: ${path.basename(iconPath)}`);
@@ -299,11 +331,15 @@ async function toggleTrayPopup() {
 
 function loadConfig() {
   configPath = path.join(app.getPath('userData'), 'config.json');
+  addLog(`Using user data path: ${app.getPath('userData')}`);
+  addLog(`Using config path: ${configPath}`);
+
   try {
     if (fs.existsSync(configPath)) {
       config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      addLog('Configuration loaded successfully');
     } else {
-      // First run - open settings
+      addLog('No configuration file found in the canonical app-data folder');
       setTimeout(openSettings, 1000);
     }
   } catch (error) {
@@ -553,6 +589,9 @@ async function startBackend() {
   }
 
   usingExistingBackend = false;
+  addLog(`Using backend executable: ${backendPath}`);
+  addLog(`Launching backend with config: ${configPath}`);
+
   if (!fs.existsSync(backendPath)) {
     addLog(`Backend executable not found: ${backendPath}`);
     dialog.showErrorBox('Backend Missing', 'The backend executable could not be found. Build the backend before starting the app.');
@@ -733,15 +772,14 @@ function quitApp() {
 }
 
 app.whenReady().then(() => {
+  app.setAppUserModelId(APP_USER_MODEL_ID);
+
   const iconPath = getAppIconPath();
   if (iconPath) {
-    app.setAppUserModelId('com.doujinshi-manager.app');
-    if (process.platform === 'win32') {
-      app.setPath('userData', app.getPath('userData'));
-    }
+    addLog(`Using app icon: ${path.basename(iconPath)}`);
   }
 
-  addLog('Doujinshi Manager starting...');
+  addLog(`${APP_DISPLAY_NAME} starting...`);
   loadConfig();
   createTray();
   addLog('Tray icon created');
@@ -836,9 +874,6 @@ app.whenReady().then(() => {
     addLog('No config found, opening settings...');
   }
 
-  // On Windows, ensure the app doesn't quit when all windows are closed
-  // by keeping a reference to prevent garbage collection
-  app.setAppUserModelId('com.doujinshi-manager.app');
 });
 
 app.on('window-all-closed', (e) => {

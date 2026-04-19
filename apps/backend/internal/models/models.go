@@ -10,6 +10,7 @@ const (
 	StatusDone        GalleryStatus = "done"
 	StatusFailed      GalleryStatus = "failed"
 	StatusDuplicate   GalleryStatus = "duplicate"
+	StatusNotFound    GalleryStatus = "not_found"
 )
 
 type OwnedEntry struct {
@@ -39,10 +40,12 @@ type HistoryEntry struct {
 }
 
 type DownloadProgress struct {
-	GalleryID   string  `json:"gallery_id"`
-	Title       string  `json:"title"`
-	CurrentPage int     `json:"current_page"`
-	TotalPages  int     `json:"total_pages"`
-	Percentage  float64 `json:"percentage"`
-	Status      string  `json:"status"`
+	GalleryID        string  `json:"gallery_id"`
+	Title            string  `json:"title"`
+	CurrentPage      int     `json:"current_page"`
+	TotalPages       int     `json:"total_pages"`
+	Percentage       float64 `json:"percentage"`
+	Status           string  `json:"status"`
+	GalleryElapsedMs int64   `json:"gallery_elapsed_ms,omitempty"`
+	BatchElapsedMs   int64   `json:"batch_elapsed_ms,omitempty"`
 }

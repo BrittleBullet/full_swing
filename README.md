@@ -13,6 +13,7 @@ Full Swing is a local-first desktop and browser workflow for queue management, l
 - Go 1.21 or newer
 - Node.js 20 or newer
 - npm 10 or newer
+- Windows for the Electron desktop build flow shown below
 - A Chromium-based browser such as Chrome or Arc for the extension
 
 ## Repository layout
@@ -22,37 +23,87 @@ Full Swing is a local-first desktop and browser workflow for queue management, l
 - apps/browser-extension — browser companion extension
 - assets/icons — shared application icons
 
-## Build and run
+---
 
-### Build the Go backend
+## Run the app locally
 
-On Windows PowerShell:
+Open PowerShell in the repository root and follow these steps.
 
-powershell
+### 1. Build the backend executable
+
+The Electron app launches the backend from apps/backend/doujinshi-manager.exe, so build that first:
+
+```powershell
 cd apps/backend
 go mod tidy
 go build -o doujinshi-manager.exe ./cmd/server
+```
 
-### Run the Electron app
+### 2. Start the Electron desktop app
 
-powershell
-cd apps/electron
+```powershell
+cd ../electron
 npm install
 npm start
+```
 
-### Build the browser extension
+This opens the desktop tray app and starts the local backend.
 
-powershell
-cd apps/browser-extension
+### 3. Optional: build and load the browser extension
+
+```powershell
+cd ../browser-extension
 npm install
 npm run build
+```
 
-## Load the extension in Chrome or Arc
+Then load the unpacked extension from:
 
-1. Open the browser extension management page.
-2. Enable developer mode.
+- apps/browser-extension/.output/chrome-mv3
+
+In Chrome or Arc:
+
+1. Open the extensions page.
+2. Turn on Developer mode.
 3. Choose Load unpacked.
-4. Select the folder at apps/browser-extension/.output/chrome-mv3.
+4. Select apps/browser-extension/.output/chrome-mv3.
+
+---
+
+## Build a Windows executable
+
+Use the Electron build command from the desktop app folder:
+
+```powershell
+cd apps/electron
+npm install
+npm run build
+```
+
+That command will:
+
+1. build the Windows backend executable from apps/backend
+2. package the Electron app with electron-builder
+3. produce both an installer and a portable executable
+
+Output goes to the dist folder at the repository root, including files like:
+
+- dist/Full Swing Setup 1.0.0.exe
+- dist/Full-Swing-1.0.0-portable.exe
+
+If Windows SmartScreen warns on first launch, that is expected for an unsigned personal build.
+
+Both the installer and portable build keep their config and SQLite data under the same Windows app-data location for consistency.
+
+---
+
+## First run
+
+1. Start the Electron app.
+2. Open Settings if prompted.
+3. Choose an existing library folder.
+4. Save the configuration.
+5. Reload the browser extension after the local app is running.
 
 ## Configuration options
 
@@ -65,15 +116,8 @@ The desktop settings window exposes the main runtime options:
 - Download Delay — delay between galleries in seconds, supported range 0 to 60
 - Server Port — local API port, supported range 1024 to 65535
 
-## First run
-
-1. Start the Electron app.
-2. Open Settings if prompted.
-3. Choose an existing library folder.
-4. Save the configuration.
-5. Reload the browser extension after the local app is running.
-
 ## Notes
 
+- Rebuild apps/backend/doujinshi-manager.exe any time you change backend Go code before relaunching Electron or packaging the app.
 - Runtime data and generated files are intentionally excluded from source control.
 - The app uses a temporary staging folder during active downloads and writes the final library files only after successful completion.

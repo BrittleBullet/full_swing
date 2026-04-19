@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"encoding/json"
@@ -62,9 +62,21 @@ func (s *Server) handleDownloadProgress(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Connection", "keep-alive")
 
 	progressCh := s.downloader.Progress()
-	if _, err := fmt.Fprintf(w, "data: %s\n\n", "{}"); err != nil {
-		log.Printf("[WARN] failed to write initial progress payload: %v", err)
-		return
+	if current := s.downloader.CurrentProgress(); current != nil {
+		data, err := json.Marshal(current)
+		if err != nil {
+			log.Printf("[WARN] failed to marshal current download progress: %v", err)
+		} else {
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				log.Printf("[WARN] failed to write current progress snapshot: %v", err)
+				return
+			}
+		}
+	} else {
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", "{}"); err != nil {
+			log.Printf("[WARN] failed to write initial progress payload: %v", err)
+			return
+		}
 	}
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
