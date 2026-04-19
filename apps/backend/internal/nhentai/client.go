@@ -36,10 +36,12 @@ var (
 	}
 )
 
+// Client fetches gallery metadata and page images from nhentai.
 type Client struct {
 	http *http.Client
 }
 
+// NewClient creates a reusable HTTP client tuned for metadata and image requests.
 func NewClient() *Client {
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
@@ -60,6 +62,7 @@ func NewClient() *Client {
 	}
 }
 
+// FetchGallery retrieves gallery metadata from the nhentai API.
 func (c *Client) FetchGallery(ctx context.Context, id string) (*Gallery, error) {
 	requestCtx := contextOrBackground(ctx)
 	url := fmt.Sprintf("%s/galleries/%s", APIBase, id)
@@ -120,6 +123,7 @@ func (c *Client) FetchGallery(ctx context.Context, id string) (*Gallery, error) 
 	return nil, ErrMaxRetriesReached
 }
 
+// DownloadPage downloads a single image page with mirror fallback and atomic temp writes.
 func (c *Client) DownloadPage(ctx context.Context, path string, destPath string) error {
 	candidates := buildPathCandidates(path)
 	var lastErr error
@@ -165,16 +169,23 @@ func (c *Client) downloadFromURL(ctx context.Context, url string, destPath strin
 	}
 
 	tempPath := destPath + ".part"
+	_ = os.Remove(tempPath)
+
 	file, err := os.Create(tempPath)
 	if err != nil {
 		return err
 	}
 
 	_, copyErr := io.Copy(file, resp.Body)
+	syncErr := file.Sync()
 	closeErr := file.Close()
 	if copyErr != nil {
 		_ = os.Remove(tempPath)
 		return copyErr
+	}
+	if syncErr != nil {
+		_ = os.Remove(tempPath)
+		return syncErr
 	}
 	if closeErr != nil {
 		_ = os.Remove(tempPath)

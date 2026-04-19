@@ -11,10 +11,10 @@ import (
 )
 
 func (s *Server) handleListQueue(w http.ResponseWriter, r *http.Request) {
-	statusParam := r.URL.Query().Get("status")
-	var statusFilter models.GalleryStatus
-	if statusParam != "" {
-		statusFilter = models.GalleryStatus(statusParam)
+	statusFilter, err := validateGalleryStatus(r.URL.Query().Get("status"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid status")
+		return
 	}
 
 	entries, err := s.db.ListQueue(statusFilter)

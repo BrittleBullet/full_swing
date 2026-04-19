@@ -2,6 +2,7 @@ package models
 
 import "time"
 
+// GalleryStatus represents the queue lifecycle state for a gallery.
 type GalleryStatus string
 
 const (
@@ -13,6 +14,7 @@ const (
 	StatusNotFound    GalleryStatus = "not_found"
 )
 
+// OwnedEntry records a gallery that is already present in the local library.
 type OwnedEntry struct {
 	ID      string    `json:"id"`
 	MediaID string    `json:"media_id"`
@@ -21,6 +23,7 @@ type OwnedEntry struct {
 	AddedAt time.Time `json:"added_at"`
 }
 
+// QueueEntry represents a gallery queued for download processing.
 type QueueEntry struct {
 	ID        string        `json:"id"`
 	Title     string        `json:"title"`
@@ -31,6 +34,7 @@ type QueueEntry struct {
 	UpdatedAt time.Time     `json:"updated_at"`
 }
 
+// HistoryEntry captures a past queue event for the activity log.
 type HistoryEntry struct {
 	ID        int       `json:"id"`
 	GalleryID string    `json:"gallery_id"`
@@ -39,6 +43,7 @@ type HistoryEntry struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// DownloadProgress describes the current SSE payload for an active gallery.
 type DownloadProgress struct {
 	GalleryID        string  `json:"gallery_id"`
 	Title            string  `json:"title"`

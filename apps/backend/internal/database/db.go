@@ -9,10 +9,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// DB wraps the shared SQLite database handle.
 type DB struct {
 	*sql.DB
 }
 
+// NewDB opens the SQLite database, applies pragmas, and runs migrations.
 func NewDB(dbPath string) (*DB, error) {
 	// Ensure directory exists
 	dir := filepath.Dir(dbPath)
@@ -25,6 +27,7 @@ func NewDB(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// SQLite in WAL mode behaves best with a single writer connection.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)

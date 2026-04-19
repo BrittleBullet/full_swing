@@ -124,3 +124,44 @@ func TestHandleEnqueue_SkipsOwnedAndExistingQueueEntries(t *testing.T) {
 		t.Fatalf("expected skipped_duplicate=1, got %d", response["skipped_duplicate"])
 	}
 }
+
+func TestHandleListHistory_ReturnsAccurateTotal(t *testing.T) {
+	s := newTestServer(t)
+	for i := 0; i < 3; i++ {
+		if err := s.db.InsertHistory(&models.HistoryEntry{
+			GalleryID: "gallery",
+			Status:    "success",
+			Timestamp: time.Now(),
+		}); err != nil {
+			t.Fatalf("failed to insert history: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/history?page=2&limit=2", nil)
+	rec := httptest.NewRecorder()
+
+	s.handleListHistory(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %s", rec.Code, rec.Body.String())
+	}
+
+	var response struct {
+		Total   int                   `json:"total"`
+		Page    int                   `json:"page"`
+		Results []models.HistoryEntry `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to decode history response: %v", err)
+	}
+
+	if response.Total != 3 {
+		t.Fatalf("expected total=3, got %d", response.Total)
+	}
+	if response.Page != 2 {
+		t.Fatalf("expected page=2, got %d", response.Page)
+	}
+	if len(response.Results) != 1 {
+		t.Fatalf("expected one history result on second page, got %d", len(response.Results))
+	}
+}

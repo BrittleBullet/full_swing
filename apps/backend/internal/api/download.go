@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -61,7 +62,11 @@ func (s *Server) handleDownloadProgress(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	progressCh := s.downloader.Progress()
+	progressCh, unsubscribe := s.downloader.SubscribeProgress()
+	defer unsubscribe()
+	heartbeat := time.NewTicker(20 * time.Second)
+	defer heartbeat.Stop()
+
 	if current := s.downloader.CurrentProgress(); current != nil {
 		data, err := json.Marshal(current)
 		if err != nil {
@@ -86,6 +91,14 @@ func (s *Server) handleDownloadProgress(w http.ResponseWriter, r *http.Request) 
 		select {
 		case <-r.Context().Done():
 			return
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(w, ": keep-alive\n\n"); err != nil {
+				log.Printf("[WARN] failed to write SSE heartbeat: %v", err)
+				return
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
 		case progress, ok := <-progressCh:
 			if !ok {
 				return

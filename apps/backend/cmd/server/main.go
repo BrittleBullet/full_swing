@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -70,18 +71,40 @@ func main() {
 	server := api.NewServer(cfg, *configPath, db, nhentaiClient, downloaderManager, libraryScanner)
 	router := server.Router()
 
-	// Start HTTP server
-	httpServer := &http.Server{
-		Addr:    ":" + fmt.Sprintf("%d", cfg.ServerPort),
-		Handler: router,
+	// Start HTTP servers.
+	servers := []*http.Server{{
+		Addr:              net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", cfg.ServerPort)),
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}}
+
+	if cfg.ServerPort != config.DefaultServerPort {
+		servers = append(servers, &http.Server{
+			Addr:              net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", config.DefaultServerPort)),
+			Handler:           router,
+			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		})
 	}
 
-	go func() {
-		log.Printf("Starting server on port %d", cfg.ServerPort)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal("Failed to start server:", err)
-		}
-	}()
+	for index, srv := range servers {
+		go func(idx int, serverInstance *http.Server) {
+			portLabel := serverInstance.Addr
+			if idx == 0 {
+				log.Printf("Starting primary server on %s", portLabel)
+				if err := serverInstance.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					log.Fatal("Failed to start server:", err)
+				}
+				return
+			}
+
+			log.Printf("Starting compatibility server on %s for extension access", portLabel)
+			if err := serverInstance.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("[WARN] compatibility server unavailable on %s: %v", portLabel, err)
+			}
+		}(index, srv)
+	}
 
 	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
@@ -91,8 +114,10 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+	for _, serverInstance := range servers {
+		if err := serverInstance.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server forced to shutdown on %s: %v", serverInstance.Addr, err)
+		}
 	}
 
 	cancelRuntime()

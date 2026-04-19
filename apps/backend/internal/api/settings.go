@@ -55,7 +55,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.config = &nextConfig
+	*s.config = nextConfig
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":                true,
 		"library_path":      s.config.LibraryPath,

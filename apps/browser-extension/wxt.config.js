@@ -7,8 +7,8 @@ export default defineConfig({
     short_name: "nhq",
     version: "0.2.0",
     description: "Queue galleries and send them to the local manager app.",
-    permissions: ["storage", "tabs"],
-    host_permissions: ["https://nhentai.net/*", "http://localhost/*"],
+    permissions: ["storage"],
+    host_permissions: ["https://nhentai.net/*", "http://localhost/*", "http://127.0.0.1/*"],
     content_security_policy: {
       extension_pages: "script-src 'self'; object-src 'self'"
     },

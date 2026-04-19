@@ -1,5 +1,6 @@
 package nhentai
 
+// Gallery represents the nhentai gallery metadata payload.
 type Gallery struct {
 	ID           int          `json:"id"`
 	MediaID      string       `json:"media_id"`
@@ -13,12 +14,14 @@ type Gallery struct {
 	Pages        []Page       `json:"pages"`
 }
 
+// GalleryTitle contains localized title variants for a gallery.
 type GalleryTitle struct {
 	English  string `json:"english"`
 	Japanese string `json:"japanese"`
 	Pretty   string `json:"pretty"`
 }
 
+// Tag describes a gallery taxonomy label such as artist or language.
 type Tag struct {
 	ID   int    `json:"id"`
 	Type string `json:"type"`
@@ -27,6 +30,7 @@ type Tag struct {
 	URL  string `json:"url"`
 }
 
+// Page describes an individual gallery image page.
 type Page struct {
 	Number int    `json:"number"`
 	Path   string `json:"path"`
@@ -34,6 +38,7 @@ type Page struct {
 	Height int    `json:"height"`
 }
 
+// Image represents an nhentai image resource.
 type Image struct {
 	Path   string `json:"path"`
 	Width  int    `json:"width"`

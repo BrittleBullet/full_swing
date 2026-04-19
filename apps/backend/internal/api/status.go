@@ -66,6 +66,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	response := map[string]interface{}{
 		"running":            true,
+		"server_port":        s.config.ServerPort,
 		"queue_count":        queueCount + downloadingCount,
 		"owned_count":        ownedCount,
 		"failed_count":       failedCount,

@@ -83,7 +83,7 @@ function secureWebPreferences() {
     preload: path.join(__dirname, 'preload.js'),
     nodeIntegration: false,
     contextIsolation: true,
-    sandbox: false,
+    sandbox: true,
     webSecurity: true
   };
 }
@@ -92,20 +92,42 @@ process.on('unhandledRejection', (error) => {
   addLog(`Unhandled promise rejection: ${error?.message || error}`);
 });
 
+function resolveValidatedDirectory(rawValue, fieldLabel, { allowEmpty = false } = {}) {
+  const trimmed = String(rawValue || '').trim();
+  if (!trimmed) {
+    if (allowEmpty) {
+      return '';
+    }
+    throw new Error(`${fieldLabel} must point to an existing directory.`);
+  }
+
+  try {
+    const resolvedPath = fs.realpathSync.native(path.resolve(trimmed));
+    const stats = fs.statSync(resolvedPath);
+    if (!stats.isDirectory()) {
+      throw new Error(`${fieldLabel} must point to a directory.`);
+    }
+    return resolvedPath;
+  } catch {
+    throw new Error(`${fieldLabel} must point to an existing directory.`);
+  }
+}
+
+function normalizePort(value) {
+  const port = Number(value);
+  return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 8080;
+}
+
 function validateConfigShape(candidate) {
   if (!candidate || typeof candidate !== 'object') {
     throw new Error('Configuration payload is invalid.');
   }
 
-  const libraryPath = String(candidate.library_path || '').trim();
-  if (!libraryPath || !fs.existsSync(libraryPath) || !fs.statSync(libraryPath).isDirectory()) {
-    throw new Error('Library path must point to an existing directory.');
-  }
-
   const pageWorkers = Number(candidate.page_workers || 0);
   const galleryWorkers = Number(candidate.gallery_workers || 0);
   const apiRequestDelay = Number(candidate.api_request_delay || 0);
-  const serverPort = Number(candidate.server_port || 0);
+  const rawServerPort = Number(candidate.server_port || 0);
+  const serverPort = normalizePort(candidate.server_port);
 
   if (!Number.isInteger(pageWorkers) || pageWorkers < 1 || pageWorkers > 20) {
     throw new Error('Page workers must be between 1 and 20.');
@@ -116,27 +138,32 @@ function validateConfigShape(candidate) {
   if (!Number.isFinite(apiRequestDelay) || apiRequestDelay < 0 || apiRequestDelay > 60) {
     throw new Error('API request delay must be between 0 and 60 seconds.');
   }
-  if (!Number.isInteger(serverPort) || serverPort < 1024 || serverPort > 65535) {
+  if (!Number.isInteger(rawServerPort) || rawServerPort < 1024 || rawServerPort > 65535) {
     throw new Error('Server port must be between 1024 and 65535.');
   }
 
   const validated = {
-    library_path: path.resolve(libraryPath),
+    library_path: resolveValidatedDirectory(candidate.library_path, 'Library path'),
     page_workers: pageWorkers,
     gallery_workers: galleryWorkers,
     api_request_delay: apiRequestDelay,
     server_port: serverPort
   };
 
-  if (typeof candidate.download_path === 'string' && candidate.download_path.trim()) {
-    const resolvedDownloadPath = path.resolve(candidate.download_path.trim());
-    if (!fs.existsSync(resolvedDownloadPath) || !fs.statSync(resolvedDownloadPath).isDirectory()) {
-      throw new Error('Download path must point to an existing directory.');
-    }
+  const resolvedDownloadPath = resolveValidatedDirectory(candidate.download_path, 'Download path', { allowEmpty: true });
+  if (resolvedDownloadPath) {
     validated.download_path = resolvedDownloadPath;
   }
 
   return validated;
+}
+
+function writeConfigAtomically(destinationPath, nextConfig) {
+  const parentDir = path.dirname(destinationPath);
+  fs.mkdirSync(parentDir, { recursive: true });
+  const tempPath = path.join(parentDir, `config-${process.pid}-${Date.now()}.json.tmp`);
+  fs.writeFileSync(tempPath, JSON.stringify(nextConfig, null, 2), { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(tempPath, destinationPath);
 }
 
 function findFirstExistingPath(candidates) {
@@ -336,22 +363,24 @@ function loadConfig() {
 
   try {
     if (fs.existsSync(configPath)) {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      config = validateConfigShape(parsed);
       addLog('Configuration loaded successfully');
     } else {
       addLog('No configuration file found in the canonical app-data folder');
       setTimeout(openSettings, 1000);
     }
   } catch (error) {
+    config = null;
     addLog(`Failed to load config: ${error?.message || String(error)}`);
+    setTimeout(openSettings, 1000);
   }
 }
 
 function saveConfig(newConfig) {
   const validatedConfig = validateConfigShape({ ...config, ...newConfig });
+  writeConfigAtomically(configPath, validatedConfig);
   config = validatedConfig;
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }
 
 function delay(ms) {

@@ -102,22 +102,24 @@ Both the installer and portable build keep their config and SQLite data under th
 1. Start the Electron app.
 2. Open Settings if prompted.
 3. Choose an existing library folder.
-4. Save the configuration.
-5. Reload the browser extension after the local app is running.
+4. Optionally choose a download staging folder, or leave it blank to use the Windows temp folder.
+5. Save the configuration.
+6. Reload the browser extension after the local app is running.
 
 ## Configuration options
 
 The desktop settings window exposes the main runtime options:
 
 - Library Path — final destination for completed library files
+- Download Path — optional staging directory for active downloads; when blank, the app uses the system temp folder
 - Page Workers — concurrent page downloads, supported range 1 to 20
 - Gallery Workers — concurrent gallery jobs, supported range 1 to 5
 - API Request Delay — metadata pacing in seconds, supported range 0 to 60
-- Download Delay — delay between galleries in seconds, supported range 0 to 60
 - Server Port — local API port, supported range 1024 to 65535
 
 ## Notes
 
 - Rebuild apps/backend/doujinshi-manager.exe any time you change backend Go code before relaunching Electron or packaging the app.
+- The desktop packaging flow now checks that the backend binary exists before packaging continues.
 - Runtime data and generated files are intentionally excluded from source control.
 - The app uses a temporary staging folder during active downloads and writes the final library files only after successful completion.

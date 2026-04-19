@@ -33,8 +33,14 @@ func (s *Server) handleListHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	total, err := s.db.CountHistory()
+	if err != nil {
+		writeInternalError(w, r, "failed to count history", err)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"total":   len(entries) * page,
+		"total":   total,
 		"page":    page,
 		"results": entries,
 	})

@@ -9,6 +9,7 @@ import (
 	"doujinshi-manager/internal/nhentai"
 )
 
+// DownloadResult contains the outcome of a single page download worker job.
 type DownloadResult struct {
 	Path  string
 	Error error

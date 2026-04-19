@@ -1,38 +1,52 @@
 import { pruneQueuedGalleriesByIds } from "../src/lib/queue";
 import { setOwnedGalleryState } from "../src/lib/owned";
 
-const API_BASE_URL = "http://localhost:8080/api";
+const API_BASE_CANDIDATES = ["http://127.0.0.1:8080/api", "http://localhost:8080/api"];
 const APP_STATUS_TIMEOUT_MS = 500;
 const OWNED_CHECK_TIMEOUT_MS = 3000;
 const SYNC_TIMEOUT_MS = 5000;
 const SEND_QUEUE_TIMEOUT_MS = 20000;
 
-function reportNonFatalError(_message, _error) {}
+let preferredApiBase = API_BASE_CANDIDATES[0];
+
+function reportNonFatalError(message, error) {
+  return {
+    message,
+    detail: error?.message || String(error || "Unknown error")
+  };
+}
 
 async function fetchJson(path, options = {}, timeout = SYNC_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  const candidates = [preferredApiBase, ...API_BASE_CANDIDATES.filter((value) => value !== preferredApiBase)];
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      ...options,
-      signal: controller.signal
-    });
+  for (const baseUrl of candidates) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
 
-    const text = await response.text();
-    let data = null;
     try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = text;
-    }
+      const response = await fetch(`${baseUrl}${path}`, {
+        ...options,
+        signal: controller.signal
+      });
 
-    return { ok: response.ok, status: response.status, data };
-  } catch {
-    return { ok: false, status: 0, data: null };
-  } finally {
-    clearTimeout(timer);
+      const text = await response.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text;
+      }
+
+      preferredApiBase = baseUrl;
+      return { ok: response.ok, status: response.status, data };
+    } catch {
+      // Try the next loopback candidate.
+    } finally {
+      clearTimeout(timer);
+    }
   }
+
+  return { ok: false, status: 0, data: null };
 }
 
 export default defineBackground(() => {
@@ -151,10 +165,10 @@ export default defineBackground(() => {
 
       sendResponse({ success: false, message: "Unsupported action." });
     })().catch((error) => {
-      reportNonFatalError("Background request failed", error);
+      const reported = reportNonFatalError("Background request failed", error);
       sendResponse({
         success: false,
-        message: error?.message || "Background request failed."
+        message: reported.detail || reported.message
       });
     });
 

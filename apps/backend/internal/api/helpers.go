@@ -3,16 +3,21 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"doujinshi-manager/internal/models"
 )
 
 const (
 	errorInvalidID       = "invalid id"
 	errorInternalMessage = "internal server error"
+	maxJSONBodyBytes     = 1 << 20
+	maxIDListLength      = 5000
 )
 
 var numericIDPattern = regexp.MustCompile(`^\d+$`)
@@ -41,11 +46,22 @@ func writeInternalError(w http.ResponseWriter, r *http.Request, message string, 
 	writeError(w, http.StatusInternalServerError, errorInternalMessage)
 }
 
-// decodeJSONBody decodes JSON with unknown fields rejected.
+// decodeJSONBody decodes a bounded JSON request body with unknown fields rejected.
 func decodeJSONBody(r *http.Request, dst interface{}) error {
-	decoder := json.NewDecoder(r.Body)
+	decoder := json.NewDecoder(io.LimitReader(r.Body, maxJSONBodyBytes))
 	decoder.DisallowUnknownFields()
-	return decoder.Decode(dst)
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("request body must contain a single JSON object")
+		}
+		return errors.New("request body must contain a single JSON object")
+	}
+
+	return nil
 }
 
 // normalizeNumericID validates that an ID is a non-empty numeric string.
@@ -59,7 +75,7 @@ func normalizeNumericID(id string) (string, error) {
 
 // validateNumericIDList validates a non-empty list of numeric IDs and deduplicates it.
 func validateNumericIDList(ids []string) ([]string, error) {
-	if len(ids) == 0 {
+	if len(ids) == 0 || len(ids) > maxIDListLength {
 		return nil, errors.New(errorInvalidID)
 	}
 
@@ -82,6 +98,17 @@ func validateNumericIDList(ids []string) ([]string, error) {
 	}
 
 	return validated, nil
+}
+
+// validateGalleryStatus ensures a queue status filter is one of the supported values.
+func validateGalleryStatus(value string) (models.GalleryStatus, error) {
+	status := models.GalleryStatus(strings.TrimSpace(strings.ToLower(value)))
+	switch status {
+	case "", models.StatusPending, models.StatusDownloading, models.StatusDone, models.StatusFailed, models.StatusDuplicate, models.StatusNotFound:
+		return status, nil
+	default:
+		return "", errors.New("invalid status")
+	}
 }
 
 // pathWithinBase reports whether target resolves within base.

@@ -177,7 +177,15 @@ export async function pruneQueuedGalleriesByIds(idsToRemove) {
   const removed = existingItems.length - nextItems.length;
 
   if (removed > 0) {
-    await setQueuedGalleries(nextItems);
+    const stored = await setQueuedGalleries(nextItems);
+    if (!stored) {
+      return {
+        removed: 0,
+        ids: existingItems.map((item) => item.id),
+        items: existingItems,
+        reason: "storage-failed"
+      };
+    }
   }
 
   return {
@@ -202,7 +210,15 @@ export async function addGalleryToQueue(item) {
 
     if (!existingItem.title && normalizedItem.title) {
       nextItems[existingIndex] = { ...existingItem, title: normalizedItem.title };
-      await setQueuedGalleries(nextItems);
+      const stored = await setQueuedGalleries(nextItems);
+      if (!stored) {
+        return {
+          added: false,
+          ids: existingItems.map((queuedItem) => queuedItem.id),
+          items: existingItems,
+          reason: "storage-failed"
+        };
+      }
       return {
         added: false,
         ids: nextItems.map((queuedItem) => queuedItem.id),
@@ -215,7 +231,10 @@ export async function addGalleryToQueue(item) {
   }
 
   const nextItems = [...existingItems, normalizedItem];
-  await setQueuedGalleries(nextItems);
+  const stored = await setQueuedGalleries(nextItems);
+  if (!stored) {
+    return { added: false, ids: existingItems.map((queuedItem) => queuedItem.id), items: existingItems, reason: "storage-failed" };
+  }
   return { added: true, ids: nextItems.map((queuedItem) => queuedItem.id), items: nextItems, reason: "added" };
 }
 
@@ -274,7 +293,21 @@ export async function addGalleriesToQueue(items) {
     });
 
   if (shouldPersist) {
-    await setQueuedGalleries(nextItems);
+    const stored = await setQueuedGalleries(nextItems);
+    if (!stored) {
+      return {
+        success: false,
+        found: inputItems.length,
+        valid,
+        added: 0,
+        skippedDuplicates: duplicateCount,
+        invalid,
+        ids: existingItems.map((item) => item.id),
+        items: existingItems,
+        message: "Failed to save queue locally.",
+        reason: "storage-failed"
+      };
+    }
   }
 
   let message = "No valid gallery IDs found.";
@@ -318,7 +351,10 @@ export async function removeGalleryIdFromQueue(id) {
     return { removed: false, ids: existingIds, reason: "missing" };
   }
 
-  await setQueuedGalleries(nextItems);
+  const stored = await setQueuedGalleries(nextItems);
+  if (!stored) {
+    return { removed: false, ids: existingIds, items: existingItems, reason: "storage-failed" };
+  }
   return { removed: true, ids: nextItems.map((queuedItem) => queuedItem.id), items: nextItems, reason: "removed" };
 }
 

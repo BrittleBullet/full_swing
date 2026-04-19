@@ -17,6 +17,7 @@ import (
 	"doujinshi-manager/internal/nhentai"
 )
 
+// Manager coordinates gallery downloads, progress publication, and graceful shutdown.
 type Manager struct {
 	db      *database.DB
 	nhentai *nhentai.Client
@@ -40,8 +41,11 @@ type Manager struct {
 	shuttingDown          bool
 	currentCancels        map[string]context.CancelFunc
 	scheduledIDs          map[string]struct{}
+	subscribers           map[int]chan models.DownloadProgress
+	nextSubscriberID      int
 }
 
+// NewManager creates a downloader manager with the provided dependencies.
 func NewManager(db *database.DB, nhentai *nhentai.Client, library *library.Builder, config *config.Config) *Manager {
 	return &Manager{
 		db:             db,
@@ -52,9 +56,11 @@ func NewManager(db *database.DB, nhentai *nhentai.Client, library *library.Build
 		progress:       make(chan models.DownloadProgress, 100),
 		currentCancels: make(map[string]context.CancelFunc),
 		scheduledIDs:   make(map[string]struct{}),
+		subscribers:    make(map[int]chan models.DownloadProgress),
 	}
 }
 
+// Start launches the gallery worker pool until the context is cancelled.
 func (m *Manager) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
@@ -71,6 +77,7 @@ func (m *Manager) Start(ctx context.Context) {
 	log.Printf("[DOWNLOADER] Downloader manager started")
 }
 
+// Stop cancels all active work and closes manager resources.
 func (m *Manager) Stop() {
 	m.stateMu.Lock()
 	m.shuttingDown = true
@@ -80,9 +87,22 @@ func (m *Manager) Stop() {
 	}
 	m.wg.Wait()
 	close(m.jobCh)
+
+	m.stateMu.Lock()
+	subscribers := make([]chan models.DownloadProgress, 0, len(m.subscribers))
+	for id, ch := range m.subscribers {
+		subscribers = append(subscribers, ch)
+		delete(m.subscribers, id)
+	}
+	m.stateMu.Unlock()
+
+	for _, ch := range subscribers {
+		close(ch)
+	}
 	close(m.progress)
 }
 
+// Enqueue schedules gallery IDs for download without duplicating active work.
 func (m *Manager) Enqueue(ids []string) error {
 	log.Printf("[ENQUEUE] Attempting to enqueue %d galleries", len(ids))
 	if len(ids) == 0 {
@@ -116,10 +136,41 @@ func (m *Manager) Enqueue(ids []string) error {
 	return nil
 }
 
+// Progress returns a dedicated subscription channel for download updates.
 func (m *Manager) Progress() <-chan models.DownloadProgress {
-	return m.progress
+	ch, _ := m.SubscribeProgress()
+	return ch
 }
 
+// SubscribeProgress registers a progress listener and returns a cleanup function.
+func (m *Manager) SubscribeProgress() (<-chan models.DownloadProgress, func()) {
+	ch := make(chan models.DownloadProgress, 16)
+
+	m.stateMu.Lock()
+	if m.subscribers == nil {
+		m.subscribers = make(map[int]chan models.DownloadProgress)
+	}
+	id := m.nextSubscriberID
+	m.nextSubscriberID++
+	m.subscribers[id] = ch
+	m.stateMu.Unlock()
+
+	cleanup := func() {
+		m.stateMu.Lock()
+		registered, ok := m.subscribers[id]
+		if ok {
+			delete(m.subscribers, id)
+		}
+		m.stateMu.Unlock()
+		if ok {
+			close(registered)
+		}
+	}
+
+	return ch, cleanup
+}
+
+// CurrentProgress returns the latest download snapshot, if one is available.
 func (m *Manager) CurrentProgress() *models.DownloadProgress {
 	m.stateMu.RLock()
 	defer m.stateMu.RUnlock()
@@ -140,6 +191,7 @@ func (m *Manager) CurrentProgress() *models.DownloadProgress {
 	return &copy
 }
 
+// LastBatchResults returns the success and failure counts for the most recent batch.
 func (m *Manager) LastBatchResults() (int, int) {
 	m.stateMu.RLock()
 	defer m.stateMu.RUnlock()
@@ -183,9 +235,24 @@ func (m *Manager) setCurrentProgress(progress models.DownloadProgress) models.Do
 
 func (m *Manager) publishProgress(progress models.DownloadProgress) {
 	progress = m.setCurrentProgress(progress)
+
 	select {
 	case m.progress <- progress:
 	default:
+	}
+
+	m.stateMu.RLock()
+	subscribers := make([]chan models.DownloadProgress, 0, len(m.subscribers))
+	for _, ch := range m.subscribers {
+		subscribers = append(subscribers, ch)
+	}
+	m.stateMu.RUnlock()
+
+	for _, ch := range subscribers {
+		select {
+		case ch <- progress:
+		default:
+		}
 	}
 }
 
@@ -239,6 +306,7 @@ func (m *Manager) isShuttingDown() bool {
 	return m.shuttingDown
 }
 
+// CancelDownloads stops active work and clears queued items from the current batch.
 func (m *Manager) CancelDownloads() int {
 	m.stateMu.Lock()
 	cancels := make(map[string]context.CancelFunc, len(m.currentCancels))
@@ -547,7 +615,10 @@ func (m *Manager) finishBatchIfIdle() {
 }
 
 func (m *Manager) cancelGallery(galleryID, reason string) {
-	entry, _ := m.db.GetQueueByID(galleryID)
+	entry, err := m.db.GetQueueByID(galleryID)
+	if err != nil {
+		log.Printf("Failed to get queue entry during cancel: %v", err)
+	}
 	title := galleryID
 	if entry != nil && entry.Title != "" {
 		title = entry.Title
@@ -579,7 +650,10 @@ func (m *Manager) cancelGallery(galleryID, reason string) {
 }
 
 func (m *Manager) notFoundGallery(galleryID, errorMsg string) {
-	entry, _ := m.db.GetQueueByID(galleryID)
+	entry, err := m.db.GetQueueByID(galleryID)
+	if err != nil {
+		log.Printf("Failed to get queue entry for not-found status: %v", err)
+	}
 	title := galleryID
 	if entry != nil && entry.Title != "" {
 		title = entry.Title
@@ -599,7 +673,10 @@ func (m *Manager) notFoundGallery(galleryID, errorMsg string) {
 }
 
 func (m *Manager) failGallery(galleryID, errorMsg string) {
-	entry, _ := m.db.GetQueueByID(galleryID)
+	entry, err := m.db.GetQueueByID(galleryID)
+	if err != nil {
+		log.Printf("Failed to get queue entry for failure status: %v", err)
+	}
 	title := galleryID
 	if entry != nil && entry.Title != "" {
 		title = entry.Title

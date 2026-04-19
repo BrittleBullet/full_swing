@@ -2,18 +2,20 @@
   "name": "doujinshi-manager",
   "version": "1.0.0",
   "description": "Local desktop manager for queued downloads and library organization",
+  "author": "Full Swing",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build:backend": "cd ../backend && set GOOS=windows&& set GOARCH=amd64&& go build -o doujinshi-manager.exe ./cmd/server",
-    "build": "npm run build:backend && electron-builder --win",
+    "build:verify-backend": "node verify-backend.js",
+    "build": "npm run build:backend && npm run build:verify-backend && electron-builder --win",
     "dist": "npm run build",
     "pack:win": "npm run build"
   },
   "devDependencies": {
     "electron": "41.2.1",
-    "electron-builder": "^26.0.12",
-    "electron-packager": "^17.1.2"
+    "electron-builder": "26.8.1",
+    "electron-packager": "17.1.2"
   },
   "build": {
     "appId": "com.fullswing.manager",

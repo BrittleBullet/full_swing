@@ -10,6 +10,7 @@ import (
 	"doujinshi-manager/internal/nhentai"
 )
 
+// Server bundles the local API dependencies and handlers.
 type Server struct {
 	config     *config.Config
 	configPath string
@@ -19,6 +20,7 @@ type Server struct {
 	library    *library.Scanner
 }
 
+// NewServer constructs an API server with the configured runtime dependencies.
 func NewServer(cfg *config.Config, configPath string, db *database.DB, nhentai *nhentai.Client, dl *downloader.Manager, lib *library.Scanner) *Server {
 	return &Server{
 		config:     cfg,
@@ -30,6 +32,7 @@ func NewServer(cfg *config.Config, configPath string, db *database.DB, nhentai *
 	}
 }
 
+// Router builds the application HTTP router.
 func (s *Server) Router() *chi.Mux {
 	r := chi.NewRouter()
 	SetupMiddleware(r)

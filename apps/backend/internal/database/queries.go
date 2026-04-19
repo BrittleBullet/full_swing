@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"log"
 	"strings"
 	"time"
 
@@ -70,7 +69,7 @@ func (db *DB) withTransaction(fn func(tx *sql.Tx) error) error {
 // Owned operations
 func (db *DB) InsertOwned(entry *models.OwnedEntry) error {
 	return db.execWithRetry(`
-		INSERT INTO owned (id, media_id, title, artist, added_at)
+		INSERT OR IGNORE INTO owned (id, media_id, title, artist, added_at)
 		VALUES (?, ?, ?, ?, ?)`,
 		entry.ID, entry.MediaID, entry.Title, entry.Artist, entry.AddedAt)
 }
@@ -82,7 +81,7 @@ func (db *DB) InsertOwnedBatch(entries []*models.OwnedEntry) error {
 
 	return db.withTransaction(func(tx *sql.Tx) error {
 		stmt, err := tx.Prepare(`
-			INSERT INTO owned (id, media_id, title, artist, added_at)
+			INSERT OR IGNORE INTO owned (id, media_id, title, artist, added_at)
 			VALUES (?, ?, ?, ?, ?)`)
 		if err != nil {
 			return err
@@ -111,21 +110,14 @@ func (db *DB) GetOwnedByID(id string) (*models.OwnedEntry, error) {
 }
 
 func (db *DB) GetOwnedByMediaID(mediaID string) (*models.OwnedEntry, error) {
-	log.Printf("[DB] GetOwnedByMediaID query for: %s", mediaID)
 	var entry models.OwnedEntry
 	err := db.QueryRow(`
 		SELECT id, media_id, title, artist, added_at
 		FROM owned WHERE media_id = ?`, mediaID).Scan(
 		&entry.ID, &entry.MediaID, &entry.Title, &entry.Artist, &entry.AddedAt)
 	if err == sql.ErrNoRows {
-		log.Printf("[DB] GetOwnedByMediaID(%s): NOT FOUND", mediaID)
 		return nil, nil
 	}
-	if err != nil {
-		log.Printf("[DB] GetOwnedByMediaID(%s): ERROR: %v", mediaID, err)
-		return nil, err
-	}
-	log.Printf("[DB] GetOwnedByMediaID(%s): FOUND - ID=%s, Title=%s", mediaID, entry.ID, entry.Title)
 	return &entry, err
 }
 
@@ -273,6 +265,13 @@ func (db *DB) CountQueue() (int, error) {
 func (db *DB) CountQueueByStatus(status models.GalleryStatus) (int, error) {
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM queue WHERE status = ?", status).Scan(&count)
+	return count, err
+}
+
+// CountHistory returns the total number of history rows.
+func (db *DB) CountHistory() (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM history").Scan(&count)
 	return count, err
 }
 
