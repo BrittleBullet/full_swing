@@ -17,6 +17,7 @@ const CHANNELS = Object.freeze({
   SETTINGS_CLOSE: 'settings-window:close',
   SETTINGS_SELECT_LIBRARY_PATH: 'settings-window:select-library-path',
   SETTINGS_SAVE_CONFIG: 'save-config',
+  SETTINGS_SAVE_RESULT: 'settings-window:save-result',
   LOG_INITIAL: 'initial-logs',
   LOG_UPDATE: 'log-update'
 });
@@ -38,6 +39,7 @@ const onChannels = new Set([
   CHANNELS.TRAY_STATE,
   CHANNELS.TRAY_VISIBILITY,
   CHANNELS.SETTINGS_LOAD_CONFIG,
+  CHANNELS.SETTINGS_SAVE_RESULT,
   CHANNELS.LOG_INITIAL,
   CHANNELS.LOG_UPDATE
 ]);

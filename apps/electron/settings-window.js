@@ -2,31 +2,101 @@ const appBridge = window.fullSwingApp;
 const CHANNELS = appBridge?.channels || {};
 
 let config = {};
+let defaults = {
+  library_path: '',
+  page_workers: 10,
+  gallery_workers: 2,
+  api_request_delay: 0.25,
+  server_port: 8080
+};
+let statusTimer = null;
+
+function setSavingState(isSaving) {
+  const saveButton = document.getElementById('save');
+  const resetButton = document.getElementById('reset-defaults');
+  if (saveButton) {
+    saveButton.disabled = isSaving;
+    saveButton.textContent = isSaving ? 'Saving...' : 'Save';
+  }
+  if (resetButton) {
+    resetButton.disabled = isSaving;
+  }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
-  appBridge?.on(CHANNELS.SETTINGS_LOAD_CONFIG, (loadedConfig) => {
-    config = loadedConfig || {};
+  populateForm(defaults);
+
+  appBridge?.on(CHANNELS.SETTINGS_LOAD_CONFIG, (payload) => {
+    if (payload?.defaults && typeof payload.defaults === 'object') {
+      defaults = { ...defaults, ...payload.defaults };
+    }
+
+    config = payload?.config && typeof payload.config === 'object'
+      ? payload.config
+      : (payload || {});
+
     populateForm();
+    setSavingState(false);
+    setStatus('');
+  });
+
+  appBridge?.on(CHANNELS.SETTINGS_SAVE_RESULT, (result) => {
+    if (result?.defaults && typeof result.defaults === 'object') {
+      defaults = { ...defaults, ...result.defaults };
+    }
+
+    if (result?.config && typeof result.config === 'object') {
+      config = result.config;
+      populateForm();
+    }
+
+    setSavingState(false);
+    setStatus(result?.message || 'Settings saved.', !result?.ok, result?.ok ? 4000 : 0);
   });
 
   document.getElementById('save').addEventListener('click', saveConfig);
+  document.getElementById('reset-defaults').addEventListener('click', resetDefaults);
   document.getElementById('library-path').addEventListener('click', selectLibraryPath);
   document.getElementById('minimize-window').addEventListener('click', () => appBridge?.send(CHANNELS.SETTINGS_MINIMIZE));
   document.getElementById('close-window').addEventListener('click', () => appBridge?.send(CHANNELS.SETTINGS_CLOSE));
 });
 
-function setStatus(message, isError = false) {
+function setStatus(message, isError = false, autoClearMs = 0) {
   const status = document.getElementById('status-message');
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
+
   status.textContent = message || '';
   status.classList.toggle('error', isError);
+
+  if (!isError && message && autoClearMs > 0) {
+    statusTimer = setTimeout(() => {
+      status.textContent = '';
+      status.classList.remove('error');
+      statusTimer = null;
+    }, autoClearMs);
+  }
 }
 
-function populateForm() {
-  document.getElementById('library-path-input').value = config.library_path || '';
-  document.getElementById('page-workers').value = config.page_workers || 10;
-  document.getElementById('gallery-workers').value = config.gallery_workers || 2;
-  document.getElementById('api-delay').value = config.api_request_delay || 0.25;
-  document.getElementById('server-port').value = config.server_port || 8080;
+function populateForm(values = config) {
+  document.getElementById('library-path-input').value = values.library_path || defaults.library_path || '';
+  document.getElementById('page-workers').value = values.page_workers || defaults.page_workers;
+  document.getElementById('gallery-workers').value = values.gallery_workers || defaults.gallery_workers;
+  document.getElementById('api-delay').value = values.api_request_delay ?? defaults.api_request_delay;
+  document.getElementById('server-port').value = values.server_port || defaults.server_port;
+}
+
+function resetDefaults() {
+  const confirmed = window.confirm('Reset all settings to their default values?');
+  if (!confirmed) {
+    return;
+  }
+
+  populateForm(defaults);
+  setStatus('Resetting settings to defaults...');
+  saveConfig();
 }
 
 async function selectLibraryPath() {
@@ -44,7 +114,15 @@ async function selectLibraryPath() {
 }
 
 function saveConfig() {
-  config.library_path = document.getElementById('library-path-input').value.trim();
+  config = {
+    ...config,
+    library_path: document.getElementById('library-path-input').value.trim(),
+    page_workers: parseInt(document.getElementById('page-workers').value, 10),
+    gallery_workers: parseInt(document.getElementById('gallery-workers').value, 10),
+    api_request_delay: parseFloat(document.getElementById('api-delay').value),
+    server_port: parseInt(document.getElementById('server-port').value, 10)
+  };
+
   delete config.download_path;
   delete config.image_request_delay;
   delete config.download_delay;
@@ -55,11 +133,12 @@ function saveConfig() {
     return;
   }
 
-  config.page_workers = parseInt(document.getElementById('page-workers').value, 10);
-  config.gallery_workers = parseInt(document.getElementById('gallery-workers').value, 10);
-  config.api_request_delay = parseFloat(document.getElementById('api-delay').value);
-  config.server_port = parseInt(document.getElementById('server-port').value, 10);
+  setSavingState(true);
+  setStatus('Saving settings...');
 
-  setStatus('Saving...');
-  appBridge?.send(CHANNELS.SETTINGS_SAVE_CONFIG, config);
+  const sent = appBridge?.send(CHANNELS.SETTINGS_SAVE_CONFIG, config);
+  if (!sent) {
+    setSavingState(false);
+    setStatus('Unable to save settings in this window.', true);
+  }
 }

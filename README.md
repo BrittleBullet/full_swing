@@ -113,21 +113,34 @@ This produces a Windows release archive in the repository dist folder named like
 
 1. Start the Electron app.
 2. Open Settings if prompted.
-3. Choose an existing library folder.
-4. Optionally choose a download staging folder, or leave it blank to use the Windows temp folder.
+3. Choose your library folder.
+4. Review the worker and port settings if needed.
 5. Save the configuration.
 6. Reload the browser extension after the local app is running.
 
-## Configuration options
+## Settings page
 
-The desktop settings window exposes the main runtime options:
+The desktop settings window controls the main app behavior:
 
-- Library Path — final destination for completed library files
-- Download Path — optional staging directory for active downloads; when blank, the app uses the system temp folder
-- Page Workers — concurrent page downloads, supported range 1 to 20
-- Gallery Workers — concurrent gallery jobs, supported range 1 to 5
-- API Request Delay — metadata pacing in seconds, supported range 0 to 60
-- Server Port — local API port, supported range 1024 to 65535
+- Library Path — where completed files are saved. This should point to an existing folder you want to use as your library.
+- Page Workers — how many pages from a single gallery download at the same time. Range: 1 to 20. Default: 10.
+- Gallery Workers — how many galleries can be processed in parallel. Range: 1 to 5. Default: 2.
+- API Request Delay — pause between metadata requests in seconds. Range: 0 to 60. Default: 0.25.
+- Server Port — the local port used by the desktop app and browser extension. Range: 1024 to 65535. Default: 8080.
+
+### Default values
+
+On a fresh setup, the app uses these defaults:
+
+- Library Path — your home folder plus Doujinshi Library
+- Page Workers — 10
+- Gallery Workers — 2
+- API Request Delay — 0.25 seconds
+- Server Port — 8080
+
+### Reset to Defaults
+
+The Settings window also includes a Reset to Defaults button. Using it restores the built-in values and saves them after confirmation.
 
 ## Notes
 

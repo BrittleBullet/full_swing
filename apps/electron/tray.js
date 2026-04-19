@@ -9,7 +9,7 @@ class AppTray {
   }
 
   create() {
-    const iconPath = path.join(__dirname, '..', '..', 'assets', 'icons', 'icon.ico');
+    const iconPath = path.join(__dirname, '..', '..', 'assets', 'icons', 'win', 'icon.ico');
     this.tray = new Tray(iconPath);
     this.updateMenu();
   }

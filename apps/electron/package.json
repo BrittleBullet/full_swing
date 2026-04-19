@@ -41,7 +41,7 @@
       }
     ],
     "win": {
-      "icon": "../../assets/icons/icon.ico",
+      "icon": "../../assets/icons/win/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         {
@@ -65,7 +65,10 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Full Swing",
       "uninstallDisplayName": "Full Swing",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "../../assets/icons/win/icon.ico",
+      "uninstallerIcon": "../../assets/icons/win/icon.ico",
+      "installerHeaderIcon": "../../assets/icons/win/icon.ico"
     },
     "portable": {
       "artifactName": "Full-Swing-${version}-portable.exe"

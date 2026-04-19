@@ -9,6 +9,12 @@ const APP_DISPLAY_NAME = 'Full Swing';
 const APP_USER_MODEL_ID = 'com.fullswing.manager';
 const LEGACY_APP_DIR_NAME = 'doujinshi-manager';
 const APP_STATE_FILES = ['config.json', 'doujinshi.db'];
+const DEFAULT_SETTINGS = Object.freeze({
+  page_workers: 10,
+  gallery_workers: 2,
+  api_request_delay: 0.25,
+  server_port: 8080
+});
 
 app.setName(APP_DISPLAY_NAME);
 
@@ -61,6 +67,7 @@ let logs = []; // Store logs for display
 let backendStatusTimer = null;
 let lastDownloadingState = false;
 let manualStopRequested = false;
+let backendRestartPending = false;
 let completionNotificationSent = false;
 
 function addLog(message) {
@@ -92,24 +99,40 @@ process.on('unhandledRejection', (error) => {
   addLog(`Unhandled promise rejection: ${error?.message || error}`);
 });
 
-function resolveValidatedDirectory(rawValue, fieldLabel, { allowEmpty = false } = {}) {
+function getDefaultSettings() {
+  return {
+    library_path: path.join(app.getPath('home'), 'Doujinshi Library'),
+    page_workers: DEFAULT_SETTINGS.page_workers,
+    gallery_workers: DEFAULT_SETTINGS.gallery_workers,
+    api_request_delay: DEFAULT_SETTINGS.api_request_delay,
+    server_port: DEFAULT_SETTINGS.server_port
+  };
+}
+
+function resolveValidatedDirectory(rawValue, fieldLabel, { allowEmpty = false, createIfMissing = false } = {}) {
   const trimmed = String(rawValue || '').trim();
   if (!trimmed) {
     if (allowEmpty) {
       return '';
     }
-    throw new Error(`${fieldLabel} must point to an existing directory.`);
+    throw new Error(`${fieldLabel} must point to a valid directory.`);
   }
 
+  const candidatePath = path.resolve(trimmed);
+
   try {
-    const resolvedPath = fs.realpathSync.native(path.resolve(trimmed));
+    if (createIfMissing && !fs.existsSync(candidatePath)) {
+      fs.mkdirSync(candidatePath, { recursive: true });
+    }
+
+    const resolvedPath = fs.realpathSync.native(candidatePath);
     const stats = fs.statSync(resolvedPath);
     if (!stats.isDirectory()) {
       throw new Error(`${fieldLabel} must point to a directory.`);
     }
     return resolvedPath;
   } catch {
-    throw new Error(`${fieldLabel} must point to an existing directory.`);
+    throw new Error(`${fieldLabel} must point to a valid directory.`);
   }
 }
 
@@ -143,14 +166,14 @@ function validateConfigShape(candidate) {
   }
 
   const validated = {
-    library_path: resolveValidatedDirectory(candidate.library_path, 'Library path'),
+    library_path: resolveValidatedDirectory(candidate.library_path, 'Library path', { createIfMissing: true }),
     page_workers: pageWorkers,
     gallery_workers: galleryWorkers,
     api_request_delay: apiRequestDelay,
     server_port: serverPort
   };
 
-  const resolvedDownloadPath = resolveValidatedDirectory(candidate.download_path, 'Download path', { allowEmpty: true });
+  const resolvedDownloadPath = resolveValidatedDirectory(candidate.download_path, 'Download path', { allowEmpty: true, createIfMissing: true });
   if (resolvedDownloadPath) {
     validated.download_path = resolvedDownloadPath;
   }
@@ -198,15 +221,21 @@ function getAppIconPath() {
   const iconRoot = getAssetsIconRoot();
   const candidates = process.platform === 'win32'
     ? [
-        path.join(iconRoot, 'icon.ico'),
-        path.join(iconRoot, 'icon.png'),
-        path.join(iconRoot, 'icon_master.png')
+        path.join(iconRoot, 'win', 'icon.ico'),
+        path.join(iconRoot, 'png', '256x256.png'),
+        path.join(iconRoot, 'png', '128x128.png')
       ]
-    : [
-        path.join(iconRoot, 'icon.png'),
-        path.join(iconRoot, 'icon_master.png'),
-        path.join(iconRoot, 'icon.ico')
-      ];
+    : process.platform === 'darwin'
+      ? [
+          path.join(iconRoot, 'mac', 'icon.icns'),
+          path.join(iconRoot, 'png', '512x512.png'),
+          path.join(iconRoot, 'png', '256x256.png')
+        ]
+      : [
+          path.join(iconRoot, 'png', '256x256.png'),
+          path.join(iconRoot, 'png', '128x128.png'),
+          path.join(iconRoot, 'png', '64x64.png')
+        ];
 
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
@@ -484,6 +513,22 @@ function postBackendAction(port, routePath) {
   });
 }
 
+function showQueueStartedNotification(queueCount) {
+  if (!Notification.isSupported()) {
+    return;
+  }
+
+  const body = queueCount > 0
+    ? `Queue started — ${queueCount} item${queueCount === 1 ? '' : 's'} waiting or downloading`
+    : 'Queue started — downloads are now in progress';
+
+  new Notification({
+    title: APP_DISPLAY_NAME,
+    body,
+    icon: getAppIconPath() || undefined
+  }).show();
+}
+
 function showQueueCompleteNotification(successCount, failedCount) {
   if (!Notification.isSupported()) {
     return;
@@ -495,7 +540,7 @@ function showQueueCompleteNotification(successCount, failedCount) {
   }
 
   new Notification({
-    title: 'Doujinshi Manager',
+    title: APP_DISPLAY_NAME,
     body: bodyLines.join('\n'),
     icon: getAppIconPath() || undefined
   }).show();
@@ -527,6 +572,7 @@ function startBackendStatusMonitoring() {
     if (downloading && !lastDownloadingState) {
       completionNotificationSent = false;
       manualStopRequested = false;
+      showQueueStartedNotification(Number(status.queue_count || 0));
     }
 
     if (lastDownloadingState && !downloading && Number(status.queue_count || 0) === 0) {
@@ -594,6 +640,7 @@ async function startBackend() {
   }
 
   manualStopRequested = false;
+  backendRestartPending = false;
   completionNotificationSent = false;
 
   const port = Number(config.server_port) || 8080;
@@ -629,35 +676,45 @@ async function startBackend() {
   }
 
   addLog('Starting backend process...');
-  backendProcess = spawn(backendPath, ['--config', configPath], {
+  const child = spawn(backendPath, ['--config', configPath], {
     stdio: ['pipe', 'pipe', 'pipe'],
     cwd: path.dirname(backendPath)
   });
+  child.exitExpected = false;
+  backendProcess = child;
 
   // Capture stdout
-  backendProcess.stdout.on('data', (data) => {
+  child.stdout.on('data', (data) => {
     addLog(`[STDOUT] ${data.toString().trim()}`);
   });
 
   // Capture stderr
-  backendProcess.stderr.on('data', (data) => {
+  child.stderr.on('data', (data) => {
     addLog(`[STDERR] ${data.toString().trim()}`);
   });
 
-  backendProcess.on('exit', (code) => {
-    addLog(`Backend exited with code ${code}`);
+  child.on('exit', (code, signal) => {
+    const wasCurrentProcess = backendProcess === child;
+    const expectedExit = Boolean(child.exitExpected) || manualStopRequested;
+    const exitDetail = signal ? `${code} (signal ${signal})` : `${code}`;
+    addLog(`Backend exited with code ${exitDetail}`);
+
+    if (!wasCurrentProcess) {
+      return;
+    }
+
     backendProcess = null;
     usingExistingBackend = false;
     lastDownloadingState = false;
     stopBackendStatusMonitoring();
     updateTrayMenu();
 
-    if (code !== 0 && !manualStopRequested && config) {
+    if (!expectedExit && code !== 0 && config) {
       dialog.showMessageBox({
         type: 'warning',
         title: 'Backend Stopped',
         message: 'The backend stopped unexpectedly.',
-        detail: `Exit code: ${code}`,
+        detail: `Exit code: ${signal ? `${code} (${signal})` : code}`,
         buttons: ['Restart', 'Dismiss'],
         defaultId: 0,
         cancelId: 1
@@ -671,7 +728,7 @@ async function startBackend() {
     }
   });
 
-  backendProcess.on('error', (error) => {
+  child.on('error', (error) => {
     addLog(`Backend error: ${error.message}`);
     dialog.showErrorBox('Backend Error', `Failed to start backend: ${error.message}`);
   });
@@ -701,8 +758,11 @@ async function cancelDownloads() {
   refreshTrayPopupState();
 }
 
-function stopBackend() {
+function stopBackend(options = {}) {
+  const { restart = false } = options;
+
   manualStopRequested = true;
+  backendRestartPending = restart;
   completionNotificationSent = true;
   lastDownloadingState = false;
   stopBackendStatusMonitoring();
@@ -710,16 +770,21 @@ function stopBackend() {
   if (usingExistingBackend && !backendProcess) {
     addLog('Backend is already running outside this Electron instance. Stop skipped.');
     usingExistingBackend = false;
+    backendRestartPending = false;
     stopBackendStatusMonitoring();
     updateTrayMenu();
     return;
   }
 
   if (backendProcess) {
-    backendProcess.kill('SIGTERM');
+    const processToStop = backendProcess;
+    processToStop.exitExpected = true;
+    addLog(restart ? 'Stopping backend process for restart...' : 'Stopping backend process...');
+    processToStop.kill('SIGTERM');
     setTimeout(() => {
-      if (backendProcess && !backendProcess.killed) {
-        backendProcess.kill('SIGKILL');
+      if (backendProcess === processToStop && processToStop.exitCode === null && processToStop.signalCode === null) {
+        addLog('Backend did not stop in time; forcing termination.');
+        processToStop.kill('SIGKILL');
       }
     }, 5000);
   }
@@ -727,10 +792,20 @@ function stopBackend() {
   updateTrayMenu();
 }
 
+function sendSettingsWindowState() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send(CHANNELS.SETTINGS_LOAD_CONFIG, {
+      config: config || {},
+      defaults: getDefaultSettings()
+    });
+  }
+}
+
 function openSettings() {
   hideTrayPopup();
 
   if (settingsWindow) {
+    sendSettingsWindowState();
     settingsWindow.focus();
     return;
   }
@@ -753,11 +828,13 @@ function openSettings() {
   });
 
   settingsWindow.loadFile('settings-window.html');
+  settingsWindow.webContents.once('did-finish-load', () => {
+    sendSettingsWindowState();
+  });
+
   settingsWindow.once('ready-to-show', () => {
     settingsWindow.show();
-    if (config) {
-      settingsWindow.webContents.send(CHANNELS.SETTINGS_LOAD_CONFIG, config);
-    }
+    sendSettingsWindowState();
   });
 
   settingsWindow.on('closed', () => {
@@ -873,18 +950,39 @@ app.whenReady().then(() => {
       addLog('Configuration saved');
     } catch (error) {
       addLog(`Configuration save failed: ${error.message}`);
+      if (settingsWindow && !settingsWindow.isDestroyed()) {
+        settingsWindow.webContents.send(CHANNELS.SETTINGS_SAVE_RESULT, {
+          ok: false,
+          message: error.message,
+          defaults: getDefaultSettings()
+        });
+      }
       dialog.showErrorBox('Invalid Configuration', error.message);
       return;
     }
 
-    if (settingsWindow) {
-      settingsWindow.close();
+    const managedWasRunning = isManagedBackendRunning();
+    const hadBackend = isAnyBackendRunning();
+    let statusMessage = 'Settings saved.';
+
+    if (managedWasRunning) {
+      statusMessage = 'Settings saved. Restarting backend...';
+    } else if (hadBackend) {
+      statusMessage = 'Settings saved. Using the existing backend instance.';
     }
 
-    const wasRunning = backendProcess && !backendProcess.killed;
-    if (wasRunning) {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send(CHANNELS.SETTINGS_SAVE_RESULT, {
+        ok: true,
+        message: statusMessage,
+        config,
+        defaults: getDefaultSettings()
+      });
+    }
+
+    if (managedWasRunning) {
       addLog('Restarting backend to apply new settings...');
-      stopBackend();
+      stopBackend({ restart: true });
       setTimeout(() => {
         if (config) {
           startBackend();

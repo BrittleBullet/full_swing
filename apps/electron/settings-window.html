@@ -182,8 +182,20 @@
 
     .actions {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
       padding-top: 4px;
+    }
+
+    .secondary-button {
+      min-width: 150px;
+      padding: 0 16px;
+    }
+
+    .secondary-button:hover {
+      background: #202020;
+      border-color: #3a3a3a;
     }
 
     .save-button {
@@ -244,6 +256,7 @@
       <div id="status-message" class="status-message"></div>
 
       <div class="actions">
+        <button id="reset-defaults" class="secondary-button" type="button">Reset to Defaults</button>
         <button id="save" class="save-button" type="button">Save</button>
       </div>
     </div>
