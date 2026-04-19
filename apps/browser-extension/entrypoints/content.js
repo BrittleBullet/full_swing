@@ -20,6 +20,7 @@ import {
   isGalleryPath,
   isSupportedQueuePagePath
 } from "../src/lib/page";
+import { formatVersionMismatchMessage } from "../src/lib/version";
 
 const CARD_SELECTOR = ".gallery";
 const CARD_LINK_SELECTOR = "a.cover";
@@ -190,6 +191,7 @@ export default defineContentScript({
     let queuedIds = new Set();
     let ownedIds = new Set();
     let appOnline = false;
+    let appConnectionState = "offline";
     let clearStatusTimer = 0;
     let pillStatusTimer = 0;
     let clearConfirmTimer = 0;
@@ -593,6 +595,11 @@ export default defineContentScript({
         .ext-floating-queue-dot[data-online="true"] {
           background: #2ecc71;
           box-shadow: 0 0 0 3px rgba(46, 204, 113, 0.16);
+        }
+
+        .ext-floating-queue-dot[data-online="warning"] {
+          background: #f59e0b;
+          box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
         }
 
         #${FLOATING_PILL_SYNC_ID} {
@@ -1230,9 +1237,9 @@ export default defineContentScript({
         connectionNode.textContent = "";
         const dot = document.createElement("span");
         dot.className = "ext-floating-queue-dot";
-        dot.dataset.online = appOnline ? "true" : "false";
+        dot.dataset.online = appConnectionState === "connected" ? "true" : appConnectionState === "version_mismatch" ? "warning" : "false";
         const text = document.createElement("span");
-        text.textContent = appOnline ? "Connected" : "Offline";
+        text.textContent = appConnectionState === "connected" ? "Connected" : appConnectionState === "version_mismatch" ? "Version mismatch" : "Offline";
         connectionNode.append(dot, text);
       }
 
@@ -1250,22 +1257,30 @@ export default defineContentScript({
 
       const sendButton = document.getElementById(FLOATING_PILL_SEND_ID);
       if (sendButton instanceof HTMLButtonElement) {
-        sendButton.disabled = !appOnline || queuedIds.size === 0;
+        sendButton.disabled = appConnectionState !== "connected" || queuedIds.size === 0;
       }
 
       const syncButton = document.getElementById(FLOATING_PILL_SYNC_ID);
       if (syncButton instanceof HTMLButtonElement) {
-        syncButton.disabled = !appOnline;
+        syncButton.disabled = appConnectionState !== "connected";
       }
     }
 
     async function refreshAppConnectionState() {
       try {
         const result = await sendAppMessage("nhq:app-status");
-        appOnline = Boolean(result?.success && result?.online);
-        appActivityText = appOnline ? formatAppActivity(result?.data) : "";
+        if (result?.versionMismatch) {
+          appOnline = false;
+          appConnectionState = "version_mismatch";
+          appActivityText = formatVersionMismatchMessage(result?.appVersion || result?.data?.version);
+        } else {
+          appOnline = Boolean(result?.success && result?.online);
+          appConnectionState = appOnline ? "connected" : "offline";
+          appActivityText = appOnline ? formatAppActivity(result?.data) : "";
+        }
       } catch {
         appOnline = false;
+        appConnectionState = "offline";
         appActivityText = "";
       }
 
@@ -1360,6 +1375,10 @@ export default defineContentScript({
       }
 
       await refreshAppConnectionState();
+      if (appConnectionState === "version_mismatch") {
+        showFloatingPillStatus(appActivityText || "Version mismatch detected", "warning");
+        return { success: false, versionMismatch: true };
+      }
       if (!appOnline) {
         showFloatingPillStatus("App is offline", "warning");
         return { success: false, offline: true };
@@ -1391,6 +1410,10 @@ export default defineContentScript({
 
     async function handleSyncLibraryAction() {
       await refreshAppConnectionState();
+      if (appConnectionState === "version_mismatch") {
+        showFloatingPillStatus(appActivityText || "Version mismatch detected", "warning");
+        return { success: false, versionMismatch: true };
+      }
       if (!appOnline) {
         showFloatingPillStatus("App is offline", "warning");
         return { success: false, offline: true };

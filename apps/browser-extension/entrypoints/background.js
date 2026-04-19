@@ -1,5 +1,6 @@
 import { pruneQueuedGalleriesByIds } from "../src/lib/queue";
 import { setOwnedGalleryState } from "../src/lib/owned";
+import { EXTENSION_VERSION, formatVersionMismatchMessage } from "../src/lib/version";
 
 const API_BASE_CANDIDATES = ["http://127.0.0.1:8080/api", "http://localhost:8080/api"];
 const APP_STATUS_TIMEOUT_MS = 500;
@@ -49,6 +50,21 @@ async function fetchJson(path, options = {}, timeout = SYNC_TIMEOUT_MS) {
   return { ok: false, status: 0, data: null };
 }
 
+async function getAppStatus() {
+  const result = await fetchJson("/status", {}, APP_STATUS_TIMEOUT_MS);
+  const appVersion = String(result?.data?.version || "unknown").trim() || "unknown";
+  const online = Boolean(result.ok && result.data?.running !== false);
+  const versionMismatch = online && appVersion !== EXTENSION_VERSION;
+
+  return {
+    result,
+    appVersion,
+    online,
+    versionMismatch,
+    message: versionMismatch ? formatVersionMismatchMessage(appVersion) : ""
+  };
+}
+
 export default defineBackground(() => {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message?.type?.startsWith("nhq:")) {
@@ -57,16 +73,35 @@ export default defineBackground(() => {
 
     (async () => {
       if (message.type === "nhq:app-status") {
-        const result = await fetchJson("/status", {}, APP_STATUS_TIMEOUT_MS);
+        const status = await getAppStatus();
         sendResponse({
-          success: result.ok,
-          online: result.ok && result.data?.running !== false,
-          data: result.data
+          success: status.result.ok,
+          online: status.online,
+          versionMismatch: status.versionMismatch,
+          appVersion: status.appVersion,
+          extensionVersion: EXTENSION_VERSION,
+          data: status.result.data
         });
         return;
       }
 
       if (message.type === "nhq:sync-library") {
+        const status = await getAppStatus();
+        if (!status.online) {
+          sendResponse({ success: false, offline: true, message: "App is offline." });
+          return;
+        }
+        if (status.versionMismatch) {
+          sendResponse({
+            success: false,
+            online: true,
+            versionMismatch: true,
+            appVersion: status.appVersion,
+            extensionVersion: EXTENSION_VERSION,
+            message: status.message
+          });
+          return;
+        }
         const result = await fetchJson("/owned/ids", {}, SYNC_TIMEOUT_MS);
         const ids = Array.isArray(result.data)
           ? result.data.map((id) => String(id).trim()).filter(Boolean)
@@ -106,6 +141,23 @@ export default defineBackground(() => {
       }
 
       if (message.type === "nhq:send-to-app") {
+        const status = await getAppStatus();
+        if (!status.online) {
+          sendResponse({ success: false, offline: true, message: "App is offline." });
+          return;
+        }
+        if (status.versionMismatch) {
+          sendResponse({
+            success: false,
+            online: true,
+            versionMismatch: true,
+            appVersion: status.appVersion,
+            extensionVersion: EXTENSION_VERSION,
+            message: status.message
+          });
+          return;
+        }
+
         const ids = Array.isArray(message.ids) ? message.ids : [];
 
         const queueResult = await fetchJson(

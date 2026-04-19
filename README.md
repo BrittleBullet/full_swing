@@ -95,6 +95,18 @@ If Windows SmartScreen warns on first launch, that is expected for an unsigned p
 
 Both the installer and portable build keep their config and SQLite data under the same Windows app-data location for consistency.
 
+### Create a shareable release zip
+
+To build the app, build the production extension, and assemble a release zip ready to share:
+
+```powershell
+cd apps/electron
+npm install
+npm run package
+```
+
+This produces a Windows release archive in the repository dist folder named like Full-Swing-v1.0.0.zip.
+
 ---
 
 ## First run
@@ -121,5 +133,6 @@ The desktop settings window exposes the main runtime options:
 
 - Rebuild apps/backend/doujinshi-manager.exe any time you change backend Go code before relaunching Electron or packaging the app.
 - The desktop packaging flow now checks that the backend binary exists before packaging continues.
+- For each release, update the backend AppVersion and the extension EXTENSION_VERSION together before building and packaging.
 - Runtime data and generated files are intentionally excluded from source control.
 - The app uses a temporary staging folder during active downloads and writes the final library files only after successful completion.

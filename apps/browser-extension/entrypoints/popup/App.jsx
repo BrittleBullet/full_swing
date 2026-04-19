@@ -14,8 +14,14 @@ import {
   getOwnedGalleryIds,
   getOwnedSyncTimestamp
 } from "../../src/lib/owned";
+import { formatVersionMismatchMessage } from "../../src/lib/version";
 
 const DEFAULT_STATUS = { tone: "neutral", message: "Queue ready." };
+const CONNECTION_STATES = {
+  OFFLINE: "offline",
+  CONNECTED: "connected",
+  VERSION_MISMATCH: "version_mismatch"
+};
 
 function reportNonFatalError(_message, _error) {}
 
@@ -91,6 +97,7 @@ function Spinner({ className = "h-4 w-4" }) {
 
 function toneClasses(tone) {
   if (tone === "success") return "border-emerald-500/30 bg-emerald-500/10 text-[var(--ext-text)]";
+  if (tone === "warning") return "border-amber-400/30 bg-amber-400/10 text-[var(--ext-text)]";
   if (tone === "error") return "border-[var(--ext-accent)]/35 bg-[var(--ext-accent-soft)] text-[var(--ext-text)]";
   if (tone === "loading") return "border-white/8 bg-white/4 text-[var(--ext-muted)]";
   return "border-white/8 bg-white/4 text-[var(--ext-muted)]";
@@ -117,7 +124,8 @@ export default function App() {
   const [status, setStatus] = useState(DEFAULT_STATUS);
   const [busyAction, setBusyAction] = useState("");
   const [removingId, setRemovingId] = useState("");
-  const [appConnected, setAppConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState(CONNECTION_STATES.OFFLINE);
+  const [appVersion, setAppVersion] = useState("");
   const [lastSyncedAt, setLastSyncedAt] = useState(0);
   const [appActivity, setAppActivity] = useState("");
 
@@ -145,13 +153,28 @@ export default function App() {
         const response = await sendMessage("nhq:app-status");
         if (mounted) {
           const online = Boolean(response?.success && response?.online);
-          setAppConnected(online);
+          const nextAppVersion = String(response?.appVersion || response?.data?.version || "").trim();
+          const mismatchMessage = formatVersionMismatchMessage(nextAppVersion);
+
+          setAppVersion(nextAppVersion);
+
+          if (response?.versionMismatch) {
+            setConnectionState(CONNECTION_STATES.VERSION_MISMATCH);
+            setAppActivity(mismatchMessage);
+            setStatus((current) => current.tone === "loading" && !includeSnapshot ? current : { tone: "warning", message: mismatchMessage });
+            return;
+          }
+
+          setConnectionState(online ? CONNECTION_STATES.CONNECTED : CONNECTION_STATES.OFFLINE);
           setAppActivity(online ? formatAppActivity(response?.data) : "");
+          setStatus((current) => current.tone === "warning" ? DEFAULT_STATUS : current);
         }
       } catch {
         if (mounted) {
-          setAppConnected(false);
+          setConnectionState(CONNECTION_STATES.OFFLINE);
+          setAppVersion("");
           setAppActivity("");
+          setStatus((current) => current.tone === "warning" ? DEFAULT_STATUS : current);
         }
       }
     }
@@ -189,9 +212,15 @@ export default function App() {
 
   const queuedIds = useMemo(() => queuedItems.map((item) => item.id), [queuedItems]);
   const hasItems = queuedItems.length > 0;
+  const canUseAppActions = connectionState === CONNECTION_STATES.CONNECTED;
+  const mismatchMessage = formatVersionMismatchMessage(appVersion);
 
   async function handleSyncLibrary() {
-    if (!appConnected) return;
+    if (connectionState === CONNECTION_STATES.VERSION_MISMATCH) {
+      setStatus({ tone: "warning", message: mismatchMessage });
+      return;
+    }
+    if (!canUseAppActions) return;
 
     setBusyAction("sync");
     setStatus({ tone: "loading", message: "Syncing library..." });
@@ -222,7 +251,11 @@ export default function App() {
   }
 
   async function handleSendToApp() {
-    if (!appConnected || !queuedIds.length) return;
+    if (connectionState === CONNECTION_STATES.VERSION_MISMATCH) {
+      setStatus({ tone: "warning", message: mismatchMessage });
+      return;
+    }
+    if (!canUseAppActions || !queuedIds.length) return;
 
     setBusyAction("send");
     setStatus({ tone: "loading", message: "Sending queue to app..." });
@@ -278,13 +311,13 @@ export default function App() {
         <div className="border-b border-[var(--ext-border)] px-3 py-3">
           <div className="flex items-center justify-between gap-2">
             <div className="inline-flex items-center gap-2 text-[11px] font-medium">
-              <span className={`h-2 w-2 rounded-full ${appConnected ? "bg-emerald-400" : "bg-zinc-500"}`} />
-              <span>{appConnected ? "Connected" : "Offline"}</span>
+              <span className={`h-2 w-2 rounded-full ${connectionState === CONNECTION_STATES.CONNECTED ? "bg-emerald-400" : connectionState === CONNECTION_STATES.VERSION_MISMATCH ? "bg-amber-400" : "bg-zinc-500"}`} />
+              <span>{connectionState === CONNECTION_STATES.CONNECTED ? "Connected" : connectionState === CONNECTION_STATES.VERSION_MISMATCH ? "Version mismatch" : "Offline"}</span>
             </div>
             <button
               type="button"
               onClick={handleSyncLibrary}
-              disabled={!appConnected || busyAction !== ""}
+              disabled={!canUseAppActions || busyAction !== ""}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--ext-border)] bg-[var(--ext-surface-soft)] text-[var(--ext-text)] disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Sync library"
               title="Sync library"
@@ -356,7 +389,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleSendToApp}
-              disabled={!appConnected || !hasItems || busyAction !== ""}
+              disabled={!canUseAppActions || !hasItems || busyAction !== ""}
               className="inline-flex h-9 flex-1 items-center justify-center rounded-md border border-[var(--ext-border)] bg-[var(--ext-accent)] text-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300 disabled:opacity-70"
               aria-label="Send queue to app"
               title="Send queue to app"

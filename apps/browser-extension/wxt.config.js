@@ -1,11 +1,12 @@
 import { defineConfig } from "wxt";
+import { EXTENSION_VERSION } from "./src/lib/version.js";
 
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
   manifest: {
     name: "nhentai Queue",
     short_name: "nhq",
-    version: "0.2.0",
+    version: EXTENSION_VERSION,
     description: "Queue galleries and send them to the local manager app.",
     permissions: ["storage"],
     host_permissions: ["https://nhentai.net/*", "http://localhost/*", "http://127.0.0.1/*"],
