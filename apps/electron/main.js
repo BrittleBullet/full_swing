@@ -738,21 +738,42 @@ async function startBackend() {
   updateTrayMenu();
 }
 
-async function cancelDownloads() {
+async function pauseDownloads() {
   manualStopRequested = true;
   completionNotificationSent = true;
+  lastDownloadingState = false;
 
   if (!config) {
     return;
   }
 
   const port = Number(config.server_port) || 8080;
-  const result = await postBackendAction(port, '/api/download/stop');
+  const result = await postBackendAction(port, '/api/download/pause');
 
   if (result.ok) {
-    addLog(`Download cancellation requested${result.data?.cancelled ? `; ${result.data.cancelled} queued item(s) paused` : ''}.`);
+    addLog(`Downloads paused${result.data?.paused ? `; ${result.data.paused} item(s) ready to resume` : ''}.`);
   } else {
-    addLog('Download cancellation request failed.');
+    addLog('Pause request failed. Restart the app so the latest backend build is used.');
+  }
+
+  refreshTrayPopupState();
+}
+
+async function resumeDownloads() {
+  manualStopRequested = false;
+  completionNotificationSent = false;
+
+  if (!config) {
+    return;
+  }
+
+  const port = Number(config.server_port) || 8080;
+  const result = await postBackendAction(port, '/api/download/start');
+
+  if (result.ok) {
+    addLog('Downloads resumed.');
+  } else {
+    addLog('Resume request failed.');
   }
 
   refreshTrayPopupState();
@@ -918,8 +939,16 @@ app.whenReady().then(() => {
     stopBackend();
   });
 
+  ipcMain.on(CHANNELS.TRAY_PAUSE_DOWNLOADS, () => {
+    pauseDownloads();
+  });
+
+  ipcMain.on(CHANNELS.TRAY_RESUME_DOWNLOADS, () => {
+    resumeDownloads();
+  });
+
   ipcMain.on(CHANNELS.TRAY_CANCEL_DOWNLOADS, () => {
-    cancelDownloads();
+    pauseDownloads();
   });
 
   ipcMain.on(CHANNELS.TRAY_OPEN_SETTINGS, () => {

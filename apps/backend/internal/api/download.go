@@ -32,10 +32,14 @@ func (s *Server) handleDownloadStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) handleDownloadPause(w http.ResponseWriter, r *http.Request) {
+	paused := s.downloader.PauseDownloads()
+	log.Printf("[INFO] pause requested; %d queued galleries remain available to resume", paused)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "paused": paused})
+}
+
 func (s *Server) handleDownloadStop(w http.ResponseWriter, r *http.Request) {
-	cancelled := s.downloader.CancelDownloads()
-	log.Printf("[INFO] cancellation requested; removed %d queued galleries from the active batch", cancelled)
-	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "cancelled": cancelled})
+	s.handleDownloadPause(w, r)
 }
 
 func (s *Server) handleDownloadRetry(w http.ResponseWriter, r *http.Request) {

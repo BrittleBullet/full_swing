@@ -27,6 +27,7 @@ type StatusResponse struct {
 	Version          string     `json:"version"`
 	ServerPort       int        `json:"server_port"`
 	Downloading      bool       `json:"downloading"`
+	Paused           bool       `json:"paused"`
 	QueueCount       int        `json:"queue_count"`
 	OwnedCount       int        `json:"owned_count"`
 	FailedCount      int        `json:"failed_count"`
@@ -98,6 +99,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Version:          AppVersion,
 		ServerPort:       s.config.ServerPort,
 		Downloading:      downloadingCount > 0,
+		Paused:           s.downloader.IsPaused(),
 		QueueCount:       queueCount + downloadingCount,
 		OwnedCount:       ownedCount,
 		FailedCount:      failedCount,

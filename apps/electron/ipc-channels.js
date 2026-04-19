@@ -3,6 +3,8 @@ module.exports = Object.freeze({
   TRAY_VISIBILITY: 'tray-popup:visibility',
   TRAY_START_BACKEND: 'tray-popup:start-backend',
   TRAY_STOP_BACKEND: 'tray-popup:stop-backend',
+  TRAY_PAUSE_DOWNLOADS: 'tray-popup:pause-downloads',
+  TRAY_RESUME_DOWNLOADS: 'tray-popup:resume-downloads',
   TRAY_CANCEL_DOWNLOADS: 'tray-popup:cancel-downloads',
   TRAY_OPEN_SETTINGS: 'tray-popup:open-settings',
   TRAY_OPEN_LOGS: 'tray-popup:open-logs',

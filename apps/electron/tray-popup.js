@@ -4,6 +4,7 @@ const CHANNELS = appBridge?.channels || {};
 const state = {
   running: false,
   downloading: false,
+  paused: false,
   port: 8080,
   version: '1.0.0',
   visible: false,
@@ -19,6 +20,7 @@ let progressReconnectTimer = null;
 const statusPill = document.getElementById('status-pill');
 const statusText = document.getElementById('status-text');
 const toggleButton = document.getElementById('toggle-backend');
+const pauseButton = document.getElementById('toggle-downloads');
 const downloadCard = document.getElementById('download-card');
 const downloadTitle = document.getElementById('download-title');
 const progressFill = document.getElementById('progress-fill');
@@ -95,13 +97,25 @@ function isWorkingStatus(status) {
 
 function renderRunningState() {
   const isDownloading = state.downloading || isWorkingStatus(state.activeDownload?.status);
+  const hasQueuedWork = state.queueCount > 0 || isDownloading;
+  const canPause = state.running && !state.paused && hasQueuedWork;
+  const canResume = state.running && state.paused && state.queueCount > 0;
 
-  statusText.textContent = state.running ? (isDownloading ? 'Working' : 'Running') : 'Stopped';
+  statusText.textContent = !state.running ? 'Stopped' : state.paused ? 'Paused' : isDownloading ? 'Working' : 'Running';
   statusPill.classList.toggle('running', state.running);
 
-  toggleButton.textContent = !state.running ? 'Start' : isDownloading ? 'Cancel' : 'Stop';
+  toggleButton.textContent = state.running ? 'Stop' : 'Start';
   toggleButton.classList.remove('start', 'stop');
   toggleButton.classList.add(state.running ? 'stop' : 'start');
+
+  pauseButton.textContent = canResume ? 'Resume' : 'Pause';
+  pauseButton.disabled = !(canPause || canResume);
+  pauseButton.classList.remove('start', 'stop');
+  if (canResume) {
+    pauseButton.classList.add('start');
+  } else if (canPause) {
+    pauseButton.classList.add('stop');
+  }
 }
 
 function renderDownloadState() {
@@ -109,13 +123,20 @@ function renderDownloadState() {
   const queueCount = Math.max(0, Number(download?.queue_count || state.queueCount || 0));
 
   if (!download) {
-    const isPreparing = state.running && (queueCount > 0 || state.downloading);
+    const isPaused = state.running && state.paused && queueCount > 0;
+    const isPreparing = !isPaused && state.running && (queueCount > 0 || state.downloading);
     downloadCard.dataset.state = isPreparing ? 'preparing' : 'idle';
-    downloadTitle.textContent = isPreparing ? 'Starting download…' : 'No active download';
+    downloadTitle.textContent = isPaused ? 'Downloads paused' : isPreparing ? 'Starting download…' : 'No active download';
     progressFill.style.width = isPreparing ? '18%' : '0%';
-    pageCount.textContent = isPreparing ? 'The backend is working — waiting for live progress' : state.running ? 'Waiting for the next job' : 'Start the app to begin';
+    pageCount.textContent = isPaused
+      ? 'Press Resume to continue the queue'
+      : isPreparing
+        ? 'The backend is working — waiting for live progress'
+        : state.running
+          ? 'Waiting for the next job'
+          : 'Start the app to begin';
     queueCountLabel.textContent = formatQueueCount(queueCount);
-    progressPercent.textContent = isPreparing ? 'Loading' : state.running ? 'Ready' : 'Idle';
+    progressPercent.textContent = isPaused ? 'Paused' : isPreparing ? 'Loading' : state.running ? 'Ready' : 'Idle';
     batchTimer.textContent = isPreparing ? 'Batch 00:00' : 'Batch --:--';
     galleryTimer.textContent = isPreparing ? 'Gallery 00:00' : 'Gallery --:--';
     return;
@@ -176,6 +197,7 @@ async function fetchStatus() {
     const data = await response.json();
     state.running = Boolean(data.running);
     state.downloading = Boolean(data.downloading);
+    state.paused = Boolean(data.paused);
     state.queueCount = Math.max(0, Number(data.queue_count || 0));
 
     if (data.current_job) {
@@ -206,6 +228,7 @@ async function fetchStatus() {
     scheduleProgressReconnect(500);
     if (!state.running) {
       state.downloading = false;
+      state.paused = false;
       state.queueCount = 0;
       if (!state.activeDownload || isWorkingStatus(state.activeDownload.status)) {
         state.activeDownload = null;
@@ -318,21 +341,43 @@ appBridge?.on(CHANNELS.TRAY_VISIBILITY, (visible) => {
 });
 
 document.getElementById('toggle-backend').addEventListener('click', () => {
-  const isDownloading = state.downloading || isWorkingStatus(state.activeDownload?.status);
-
-  if (isDownloading) {
-    appBridge?.send(CHANNELS.TRAY_CANCEL_DOWNLOADS);
-    state.downloading = false;
-    state.activeDownload = null;
-    clearResultTimer();
-  } else if (state.running) {
+  if (state.running) {
     appBridge?.send(CHANNELS.TRAY_STOP_BACKEND);
     state.running = false;
+    state.downloading = false;
+    state.paused = false;
     state.activeDownload = null;
   } else {
     appBridge?.send(CHANNELS.TRAY_START_BACKEND);
     state.running = true;
   }
+  clearResultTimer();
+  render();
+});
+
+pauseButton.addEventListener('click', () => {
+  if (!state.running || pauseButton.disabled) {
+    return;
+  }
+
+  if (state.paused) {
+    appBridge?.send(CHANNELS.TRAY_RESUME_DOWNLOADS);
+    state.paused = false;
+    if (state.queueCount > 0) {
+      state.activeDownload = normalizeProgress({
+        title: 'Download in progress',
+        status: 'preparing',
+        queue_count: state.queueCount
+      });
+    }
+  } else {
+    appBridge?.send(CHANNELS.TRAY_PAUSE_DOWNLOADS);
+    state.paused = true;
+    state.downloading = false;
+    state.activeDownload = null;
+  }
+
+  clearResultTimer();
   render();
 });
 

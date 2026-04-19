@@ -270,6 +270,18 @@
       transform: translateY(-1px);
     }
 
+    .button:disabled {
+      opacity: 0.45;
+      cursor: default;
+      transform: none;
+    }
+
+    .button:disabled:hover {
+      border-color: var(--border);
+      background: var(--surface);
+      color: var(--text);
+    }
+
     .button.start {
       background: var(--accent);
       border-color: var(--accent);
@@ -336,8 +348,9 @@
         </div>
       </div>
 
-      <div class="button-row">
+      <div class="button-row two">
         <button id="toggle-backend" class="button start" type="button">Start</button>
+        <button id="toggle-downloads" class="button" type="button" disabled>Pause</button>
       </div>
 
       <div class="button-row three">

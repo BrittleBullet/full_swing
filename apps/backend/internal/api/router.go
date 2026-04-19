@@ -50,6 +50,7 @@ func (s *Server) Router() *chi.Mux {
 		r.Delete("/queue", s.handleClearQueue)
 
 		r.Post("/download/start", s.handleDownloadStart)
+		r.Post("/download/pause", s.handleDownloadPause)
 		r.Post("/download/stop", s.handleDownloadStop)
 		r.Post("/download/retry/{id}", s.handleDownloadRetry)
 		r.Get("/download/progress", s.handleDownloadProgress)

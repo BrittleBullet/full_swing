@@ -39,6 +39,7 @@ type Manager struct {
 	currentGalleryID      string
 	currentGalleryStarted time.Time
 	shuttingDown          bool
+	paused                bool
 	currentCancels        map[string]context.CancelFunc
 	scheduledIDs          map[string]struct{}
 	subscribers           map[int]chan models.DownloadProgress
@@ -67,6 +68,7 @@ func (m *Manager) Start(ctx context.Context) {
 	m.runCtx = ctx
 	m.stateMu.Lock()
 	m.shuttingDown = false
+	m.paused = false
 	m.stateMu.Unlock()
 
 	log.Printf("[DOWNLOADER] Starting downloader manager with %d gallery workers", m.config.GalleryWorkers)
@@ -198,6 +200,13 @@ func (m *Manager) LastBatchResults() (int, int) {
 	return m.lastBatchSuccess, m.lastBatchFailed
 }
 
+// IsPaused reports whether the current batch has been manually paused.
+func (m *Manager) IsPaused() bool {
+	m.stateMu.RLock()
+	defer m.stateMu.RUnlock()
+	return m.paused
+}
+
 func (m *Manager) beginBatch() {
 	m.stateMu.Lock()
 	defer m.stateMu.Unlock()
@@ -211,6 +220,7 @@ func (m *Manager) beginBatch() {
 		m.currentGalleryStarted = time.Time{}
 	}
 	m.batchInProgress = true
+	m.paused = false
 }
 
 func (m *Manager) setCurrentProgress(progress models.DownloadProgress) models.DownloadProgress {
@@ -306,44 +316,43 @@ func (m *Manager) isShuttingDown() bool {
 	return m.shuttingDown
 }
 
-// CancelDownloads stops active work and clears queued items from the current batch.
-func (m *Manager) CancelDownloads() int {
+// PauseDownloads stops active work and keeps queued items pending for a later resume.
+func (m *Manager) PauseDownloads() int {
 	m.stateMu.Lock()
 	cancels := make(map[string]context.CancelFunc, len(m.currentCancels))
 	for galleryID, cancel := range m.currentCancels {
 		cancels[galleryID] = cancel
 	}
 	m.batchInProgress = false
+	m.paused = true
 	m.stateMu.Unlock()
 
 	for galleryID, cancel := range cancels {
-		log.Printf("[DOWNLOADER] Cancelling active gallery: %s", galleryID)
+		log.Printf("[DOWNLOADER] Pausing active gallery: %s", galleryID)
 		cancel()
 	}
 
-	clearedCount, err := m.db.CountQueue()
-	if err != nil {
-		log.Printf("[DOWNLOADER] Failed to count queue before clearing: %v", err)
-		clearedCount = 0
-	}
-	if err := m.db.ClearQueue(); err != nil {
-		log.Printf("[DOWNLOADER] Failed to clear queue after cancel: %v", err)
-	}
-
+	pausedCount := len(cancels)
 	for {
 		select {
 		case queuedID, ok := <-m.jobCh:
 			if !ok {
 				m.clearCurrentProgress()
-				return clearedCount
+				return pausedCount
 			}
+			pausedCount++
 			m.unmarkScheduled(queuedID)
-			log.Printf("[DOWNLOADER] Removed queued gallery after cancel request: %s", queuedID)
+			log.Printf("[DOWNLOADER] Removed queued gallery from the active batch after pause request: %s", queuedID)
 		default:
 			m.clearCurrentProgress()
-			return clearedCount
+			return pausedCount
 		}
 	}
+}
+
+// CancelDownloads remains as a compatibility alias for pause behavior.
+func (m *Manager) CancelDownloads() int {
+	return m.PauseDownloads()
 }
 
 func (m *Manager) markBatchSuccess() {
@@ -610,6 +619,7 @@ func (m *Manager) finishBatchIfIdle() {
 		m.batchStartedAt = time.Time{}
 		m.currentGalleryID = ""
 		m.currentGalleryStarted = time.Time{}
+		m.paused = false
 		m.stateMu.Unlock()
 	}
 }

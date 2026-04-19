@@ -5,7 +5,7 @@
   "author": "Full Swing",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "npm run build:backend && electron .",
     "build:backend": "cd ../backend && set GOOS=windows&& set GOARCH=amd64&& go build -o doujinshi-manager.exe ./cmd/server",
     "build:verify-backend": "node verify-backend.js",
     "build": "npm run build:backend && npm run build:verify-backend && electron-builder --win",
