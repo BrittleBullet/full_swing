@@ -25,7 +25,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	chromeExtensionOrigin := regexp.MustCompile(`^chrome-extension://[a-z]{32}$`)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
-		if origin != "" && (chromeExtensionOrigin.MatchString(origin) || isLoopbackOrigin(origin)) {
+		if origin != "" && (chromeExtensionOrigin.MatchString(origin) || isLoopbackOrigin(origin) || isDesktopOrigin(origin)) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
@@ -52,12 +52,25 @@ func isLoopbackOrigin(origin string) bool {
 	return parsed.Scheme == "http" && (hostname == "localhost" || hostname == "127.0.0.1")
 }
 
+func isDesktopOrigin(origin string) bool {
+	if strings.EqualFold(origin, "null") {
+		return true
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(parsed.Scheme, "file")
+}
+
 func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Cross-Origin-Resource-Policy", "same-site")
+		w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 		next.ServeHTTP(w, r)
 	})
 }
