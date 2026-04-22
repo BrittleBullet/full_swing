@@ -50,7 +50,7 @@ func DefaultConfig() *Config {
 func defaultLibraryPath() string {
 	homeDir, err := os.UserHomeDir()
 	if err == nil && strings.TrimSpace(homeDir) != "" {
-		return filepath.Join(homeDir, "Doujinshi Library")
+		return filepath.Join(homeDir, "Full Swing Library")
 	}
 	return "library"
 }

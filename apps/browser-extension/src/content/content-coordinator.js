@@ -52,9 +52,6 @@ const INIT_ATTR = "data-ext-queue-initialized";
 const RESULTS_WRAPPER_SELECTORS = [".container", ".index-container", "#content", "main", ".content"];
 const RESULTS_GRID_SELECTORS = [".gallery-grid", ".galleries", ".gallery-list", "#favcontainer"];
 
-const API_BASE_URL = 'http://localhost:8080/api';
-const APP_STATUS_TIMEOUT_MS = 2500;
-
 function reportNonFatalError(message, errorOrContext) {
   const detail = errorOrContext instanceof Error
     ? errorOrContext
@@ -106,17 +103,6 @@ function formatAppActivity(snapshot) {
   const totalPages = Number(snapshot.current_job.total_pages || 0);
 
   return `Downloading: ${title} (${currentPage}/${totalPages})`;
-}
-
-async function fetchWithTimeout(url, options = {}, timeout = APP_STATUS_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeout);
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timer);
-  }
 }
 
 async function sendAppMessage(type, payload = {}) {
@@ -1349,15 +1335,6 @@ export function initializeContentScript() {
         sendResponse({ success: false, error: error.message });
       }
     });
-
-    async function checkAppOwnedGalleries(galleryIds = collectVisibleOwnedCheckIds()) {
-      await loadOwnedCache();
-      if (!lastSyncedAt || galleryIds.length === 0) {
-        return new Set();
-      }
-
-      return new Set(galleryIds.filter((id) => ownedIds.has(id)));
-    }
 
     async function init() {
       ensureContentStyles();

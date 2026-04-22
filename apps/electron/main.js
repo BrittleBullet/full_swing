@@ -56,7 +56,6 @@ if (!gotSingleInstanceLock) {
 }
 
 let tray = null;
-let mainWindow = null;
 let trayPopupWindow = null;
 let settingsWindow = null;
 let logWindow = null;
@@ -129,7 +128,7 @@ process.on('unhandledRejection', (error) => {
 
 function getDefaultSettings() {
   return {
-    library_path: path.join(app.getPath('home'), 'Doujinshi Library'),
+    library_path: path.join(app.getPath('home'), 'Full Swing Library'),
     page_workers: DEFAULT_SETTINGS.page_workers,
     gallery_workers: DEFAULT_SETTINGS.gallery_workers,
     api_request_delay: DEFAULT_SETTINGS.api_request_delay,
@@ -232,7 +231,7 @@ function getAssetsIconRoot() {
   return path.join(__dirname, '..', '..', 'assets', 'icons');
 }
 
-const binaryName = 'doujinshi-manager.exe';
+const binaryName = 'full-swing.exe';
 
 function getBackendExecutablePath() {
   if (app.isPackaged) {

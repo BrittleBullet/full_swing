@@ -326,6 +326,10 @@ func (db *DB) ClearQueue() error {
 	return db.execWithRetry("DELETE FROM queue")
 }
 
+func (db *DB) ClearPendingQueue() error {
+	return db.execWithRetry("DELETE FROM queue WHERE status = ?", models.StatusPending)
+}
+
 func (db *DB) CountQueue() (int, error) {
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM queue").Scan(&count)

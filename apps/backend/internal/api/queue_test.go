@@ -165,3 +165,49 @@ func TestHandleListHistory_ReturnsAccurateTotal(t *testing.T) {
 		t.Fatalf("expected one history result on second page, got %d", len(response.Results))
 	}
 }
+
+func TestHandleClearQueue_DeletesOnlyPendingEntries(t *testing.T) {
+	s := newTestServer(t)
+	now := time.Now()
+
+	entries := []*models.QueueEntry{
+		{ID: "111111", Status: models.StatusPending, AddedAt: now, UpdatedAt: now},
+		{ID: "222222", Status: models.StatusPending, AddedAt: now, UpdatedAt: now},
+		{ID: "333333", Status: models.StatusDownloading, AddedAt: now, UpdatedAt: now},
+		{ID: "444444", Status: models.StatusDone, AddedAt: now, UpdatedAt: now},
+	}
+	if err := s.db.InsertQueueBatch(entries); err != nil {
+		t.Fatalf("failed to insert queue entries: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/queue", nil)
+	rec := httptest.NewRecorder()
+
+	s.handleClearQueue(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %s", rec.Code, rec.Body.String())
+	}
+
+	var response map[string]int
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if response["cleared"] != 2 {
+		t.Fatalf("expected cleared=2, got %d", response["cleared"])
+	}
+
+	remaining, err := s.db.ListQueue("")
+	if err != nil {
+		t.Fatalf("failed to list remaining queue entries: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("expected 2 remaining queue entries, got %d", len(remaining))
+	}
+	if remaining[0].ID != "333333" || remaining[0].Status != models.StatusDownloading {
+		t.Fatalf("expected downloading entry to remain, got %+v", remaining[0])
+	}
+	if remaining[1].ID != "444444" || remaining[1].Status != models.StatusDone {
+		t.Fatalf("expected done entry to remain, got %+v", remaining[1])
+	}
+}

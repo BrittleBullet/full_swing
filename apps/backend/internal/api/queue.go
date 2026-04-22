@@ -116,12 +116,12 @@ func (s *Server) handleDeleteQueue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleClearQueue(w http.ResponseWriter, r *http.Request) {
-	count, err := s.db.CountQueue()
+	count, err := s.db.CountQueueByStatus(models.StatusPending)
 	if err != nil {
 		writeInternalError(w, r, "failed to count queued galleries", err)
 		return
 	}
-	if err := s.db.ClearQueue(); err != nil {
+	if err := s.db.ClearPendingQueue(); err != nil {
 		writeInternalError(w, r, "failed to clear queue", err)
 		return
 	}

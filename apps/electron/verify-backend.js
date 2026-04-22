@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const backendPath = path.join(__dirname, '..', 'backend', 'doujinshi-manager.exe');
+const backendPath = path.join(__dirname, '..', 'backend', 'full-swing.exe');
 
 if (!fs.existsSync(backendPath)) {
   console.error(`Missing backend binary: ${backendPath}`);
