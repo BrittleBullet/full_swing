@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node ./scripts/sync-icons.mjs && wxt",
-    "build": "node ./scripts/sync-icons.mjs && wxt build",
-    "zip": "node ./scripts/sync-icons.mjs && wxt zip"
+    "sync:version": "node ../../scripts/sync-version.mjs",
+    "dev": "npm run sync:version && node ./scripts/sync-icons.mjs && wxt",
+    "build": "npm run sync:version && node ./scripts/sync-icons.mjs && wxt build",
+    "zip": "npm run sync:version && node ./scripts/sync-icons.mjs && wxt zip"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.2",

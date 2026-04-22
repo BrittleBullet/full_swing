@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Doujinshi Manager — Settings</title>
+  <title>Full Swing — Settings</title>
   <style>
     :root {
       --bg: #111111;
@@ -215,7 +215,7 @@
 <body>
   <div class="window">
     <div class="titlebar">
-      <div class="titlebar-title">Doujinshi Manager — Settings</div>
+      <div class="titlebar-title">Full Swing — Settings</div>
       <div class="window-controls">
         <button class="window-control" id="minimize-window" type="button" aria-label="Minimize">—</button>
         <button class="window-control close" id="close-window" type="button" aria-label="Close">×</button>
@@ -230,6 +230,15 @@
           <button id="library-path" class="browse-button" type="button">Browse</button>
         </div>
         <div class="helper-text">Final files are saved here.</div>
+      </div>
+
+      <div class="form-group">
+        <label for="download-path-input">Download Path</label>
+        <div class="path-input">
+          <input type="text" id="download-path-input" placeholder="Optional temp staging folder for active downloads">
+          <button id="download-path" class="browse-button" type="button">Browse</button>
+        </div>
+        <div class="helper-text">Leave blank to use the system temp folder.</div>
       </div>
 
       <div class="form-group">

@@ -350,11 +350,6 @@ func (m *Manager) PauseDownloads() int {
 	}
 }
 
-// CancelDownloads remains as a compatibility alias for pause behavior.
-func (m *Manager) CancelDownloads() int {
-	return m.PauseDownloads()
-}
-
 func (m *Manager) markBatchSuccess() {
 	m.stateMu.Lock()
 	defer m.stateMu.Unlock()
@@ -493,7 +488,7 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 		if err := m.db.UpdateQueueStatus(galleryID, models.StatusDuplicate, ""); err != nil {
 			log.Printf("Failed to update status to duplicate: %v", err)
 		}
-		m.recordHistory(galleryID, "duplicate", "")
+		m.recordHistory(galleryID, models.HistoryStatusDuplicate, "")
 		m.finishBatchIfIdle()
 		return
 	}
@@ -570,14 +565,11 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 		return
 	}
 
-	if artist == "" {
-		artist = result.ArtistFolder
-	}
 	ownedEntry := &models.OwnedEntry{
 		ID:      galleryID,
 		MediaID: gallery.MediaID,
-		Title:   displayTitle,
-		Artist:  artist,
+		Title:   result.Title,
+		Artist:  result.ArtistFolder,
 		AddedAt: time.Now(),
 	}
 	if err := m.db.InsertOwned(ownedEntry); err != nil {
@@ -596,7 +588,7 @@ func (m *Manager) processGallery(ctx context.Context, galleryID string) {
 	progress.GalleryElapsedMs = time.Since(galleryStartedAt).Milliseconds()
 	m.publishProgress(progress)
 	m.markBatchSuccess()
-	go m.recordHistory(galleryID, "success", "")
+	go m.recordHistory(galleryID, models.HistoryStatusSuccess, "")
 	m.finishBatchIfIdle()
 }
 
@@ -649,14 +641,14 @@ func (m *Manager) cancelGallery(galleryID, reason string) {
 		if err := m.db.UpdateQueueStatus(galleryID, models.StatusFailed, "Interrupted during shutdown"); err != nil {
 			log.Printf("Failed to update status to failed during shutdown: %v", err)
 		}
-		m.recordHistory(galleryID, "failed", "Interrupted during shutdown")
+		m.recordHistory(galleryID, models.HistoryStatusFailed, "Interrupted during shutdown")
 		return
 	}
 
 	if err := m.db.UpdateQueueStatus(galleryID, models.StatusPending, reason); err != nil {
 		log.Printf("Failed to update status to pending after cancel: %v", err)
 	}
-	m.recordHistory(galleryID, "cancelled", reason)
+	m.recordHistory(galleryID, models.HistoryStatusCancelled, reason)
 }
 
 func (m *Manager) notFoundGallery(galleryID, errorMsg string) {
@@ -678,7 +670,7 @@ func (m *Manager) notFoundGallery(galleryID, errorMsg string) {
 	if err := m.db.UpdateQueueStatus(galleryID, models.StatusNotFound, errorMsg); err != nil {
 		log.Printf("Failed to update status to not_found: %v", err)
 	}
-	m.recordHistory(galleryID, "not_found", errorMsg)
+	m.recordHistory(galleryID, models.HistoryStatusNotFound, errorMsg)
 	m.finishBatchIfIdle()
 }
 
@@ -701,11 +693,11 @@ func (m *Manager) failGallery(galleryID, errorMsg string) {
 	if err := m.db.UpdateQueueStatus(galleryID, models.StatusFailed, errorMsg); err != nil {
 		log.Printf("Failed to update status to failed: %v", err)
 	}
-	m.recordHistory(galleryID, "failed", errorMsg)
+	m.recordHistory(galleryID, models.HistoryStatusFailed, errorMsg)
 	m.finishBatchIfIdle()
 }
 
-func (m *Manager) recordHistory(galleryID, status, errorMsg string) {
+func (m *Manager) recordHistory(galleryID string, status models.HistoryStatus, errorMsg string) {
 	entry := &models.HistoryEntry{
 		GalleryID: galleryID,
 		Status:    status,

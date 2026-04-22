@@ -18,5 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Clear button
   document.getElementById('clear').addEventListener('click', () => {
     logArea.textContent = '';
+    appBridge?.send(CHANNELS.LOG_CLEAR);
   });
 });

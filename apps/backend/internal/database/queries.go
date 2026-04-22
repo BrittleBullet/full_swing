@@ -165,6 +165,76 @@ func (db *DB) ListOwnedIDs() ([]string, error) {
 	return ids, rows.Err()
 }
 
+func (db *DB) ListAllOwned() ([]models.OwnedEntry, error) {
+	rows, err := db.Query(`
+		SELECT id, media_id, title, artist, added_at
+		FROM owned ORDER BY added_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []models.OwnedEntry
+	for rows.Next() {
+		var entry models.OwnedEntry
+		if err := rows.Scan(&entry.ID, &entry.MediaID, &entry.Title, &entry.Artist, &entry.AddedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
+func (db *DB) ReplaceOwned(entries []*models.OwnedEntry) error {
+	return db.withTransaction(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM owned`); err != nil {
+			return err
+		}
+
+		if len(entries) == 0 {
+			return nil
+		}
+
+		stmt, err := tx.Prepare(`
+			INSERT INTO owned (id, media_id, title, artist, added_at)
+			VALUES (?, ?, ?, ?, ?)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, entry := range entries {
+			if _, err := stmt.Exec(entry.ID, entry.MediaID, entry.Title, entry.Artist, entry.AddedAt); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func (db *DB) DeleteOwnedByIDs(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	return db.withTransaction(func(tx *sql.Tx) error {
+		stmt, err := tx.Prepare(`DELETE FROM owned WHERE id = ?`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, id := range ids {
+			if _, err := stmt.Exec(id); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 // Queue operations
 func (db *DB) InsertQueue(entry *models.QueueEntry) error {
 	return db.execWithRetry(`

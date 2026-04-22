@@ -130,7 +130,7 @@ func TestHandleListHistory_ReturnsAccurateTotal(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		if err := s.db.InsertHistory(&models.HistoryEntry{
 			GalleryID: "gallery",
-			Status:    "success",
+			Status:    models.HistoryStatusSuccess,
 			Timestamp: time.Now(),
 		}); err != nil {
 			t.Fatalf("failed to insert history: %v", err)

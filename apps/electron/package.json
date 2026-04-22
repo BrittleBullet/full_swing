@@ -5,10 +5,11 @@
   "author": "Full Swing",
   "main": "main.js",
   "scripts": {
-    "start": "npm run build:backend && electron .",
-    "build:backend": "cd ../backend && set GOOS=windows&& set GOARCH=amd64&& go build -o doujinshi-manager.exe ./cmd/server",
+    "sync:version": "node ../../scripts/sync-version.mjs",
+    "start": "npm run sync:version && npm run build:backend && electron .",
+    "build:backend": "npm run sync:version && cd ../backend && set GOOS=windows&& set GOARCH=amd64&& go build -o doujinshi-manager.exe ./cmd/server",
     "build:verify-backend": "node verify-backend.js",
-    "build": "npm run build:backend && npm run build:verify-backend && electron-builder --win",
+    "build": "npm run sync:version && npm run build:backend && npm run build:verify-backend && electron-builder --win",
     "package": "npm run build && npm --prefix ../browser-extension run build && node scripts/package-release.js",
     "dist": "npm run build",
     "pack:win": "npm run build"
@@ -34,6 +35,10 @@
       {
         "from": "../backend/doujinshi-manager.exe",
         "to": "doujinshi-manager.exe"
+      },
+      {
+        "from": "../../VERSION",
+        "to": "VERSION"
       },
       {
         "from": "../../assets/icons",

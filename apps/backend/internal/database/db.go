@@ -2,12 +2,18 @@ package database
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 
 	_ "modernc.org/sqlite"
 )
+
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
 
 // DB wraps the shared SQLite database handle.
 type DB struct {
@@ -54,39 +60,23 @@ func NewDB(dbPath string) (*DB, error) {
 }
 
 func runMigrations(db *sql.DB) error {
-	schema := `
-CREATE TABLE IF NOT EXISTS owned (
-    id          TEXT PRIMARY KEY,
-    media_id    TEXT NOT NULL,
-    title       TEXT NOT NULL,
-    artist      TEXT,
-    added_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+	entries, err := fs.Glob(migrationFiles, "migrations/*.sql")
+	if err != nil {
+		return fmt.Errorf("failed to list migration files: %w", err)
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("no migration files found")
+	}
 
-CREATE TABLE IF NOT EXISTS queue (
-    id          TEXT PRIMARY KEY,
-    title       TEXT,
-    artist      TEXT,
-    status      TEXT NOT NULL DEFAULT 'pending',
-    error       TEXT,
-    added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS history (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    gallery_id  TEXT NOT NULL,
-    status      TEXT NOT NULL,
-    error       TEXT,
-    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_owned_media_id ON owned(media_id);
-CREATE INDEX IF NOT EXISTS idx_queue_status ON queue(status);
-`
-
-	if _, err := db.Exec(schema); err != nil {
-		return err
+	sort.Strings(entries)
+	for _, migrationPath := range entries {
+		schema, err := migrationFiles.ReadFile(migrationPath)
+		if err != nil {
+			return fmt.Errorf("failed to read migration %s: %w", migrationPath, err)
+		}
+		if _, err := db.Exec(string(schema)); err != nil {
+			return fmt.Errorf("failed to execute migration %s: %w", migrationPath, err)
+		}
 	}
 
 	return nil

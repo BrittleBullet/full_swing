@@ -51,11 +51,11 @@ func (s *Server) Router() *chi.Mux {
 
 		r.Post("/download/start", s.handleDownloadStart)
 		r.Post("/download/pause", s.handleDownloadPause)
-		r.Post("/download/stop", s.handleDownloadStop)
 		r.Post("/download/retry/{id}", s.handleDownloadRetry)
 		r.Get("/download/progress", s.handleDownloadProgress)
 
 		r.Get("/library", s.handleListLibrary)
+		r.Post("/library/reconcile", s.handleLibraryReconcile)
 		r.Get("/history", s.handleListHistory)
 
 		r.Get("/settings", s.handleGetSettings)

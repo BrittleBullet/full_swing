@@ -5,7 +5,6 @@ module.exports = Object.freeze({
   TRAY_STOP_BACKEND: 'tray-popup:stop-backend',
   TRAY_PAUSE_DOWNLOADS: 'tray-popup:pause-downloads',
   TRAY_RESUME_DOWNLOADS: 'tray-popup:resume-downloads',
-  TRAY_CANCEL_DOWNLOADS: 'tray-popup:cancel-downloads',
   TRAY_OPEN_SETTINGS: 'tray-popup:open-settings',
   TRAY_OPEN_LOGS: 'tray-popup:open-logs',
   TRAY_OPEN_BROWSE: 'tray-popup:open-browse',
@@ -14,8 +13,10 @@ module.exports = Object.freeze({
   SETTINGS_MINIMIZE: 'settings-window:minimize',
   SETTINGS_CLOSE: 'settings-window:close',
   SETTINGS_SELECT_LIBRARY_PATH: 'settings-window:select-library-path',
+  SETTINGS_SELECT_DOWNLOAD_PATH: 'settings-window:select-download-path',
   SETTINGS_SAVE_CONFIG: 'save-config',
   SETTINGS_SAVE_RESULT: 'settings-window:save-result',
   LOG_INITIAL: 'initial-logs',
-  LOG_UPDATE: 'log-update'
+  LOG_UPDATE: 'log-update',
+  LOG_CLEAR: 'log-clear'
 });

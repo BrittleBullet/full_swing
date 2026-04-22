@@ -45,6 +45,7 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 	skippedOwned := 0
 	skippedDuplicate := 0
 	pendingEntries := make([]*models.QueueEntry, 0, len(validatedIDs))
+	resetIDs := make([]string, 0)
 	now := time.Now()
 
 	for _, id := range validatedIDs {
@@ -64,7 +65,12 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if entry != nil {
-			skippedDuplicate++
+			if entry.Status == models.StatusPending || entry.Status == models.StatusDownloading {
+				skippedDuplicate++
+				continue
+			}
+			// Terminal state (done/failed/duplicate/not_found): reset to pending so it can be re-downloaded.
+			resetIDs = append(resetIDs, id)
 			continue
 		}
 
@@ -76,13 +82,20 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	for _, id := range resetIDs {
+		if err := s.db.UpdateQueueStatus(id, models.StatusPending, ""); err != nil {
+			writeInternalError(w, r, "failed to reset queue entry", err)
+			return
+		}
+	}
+
 	if err := s.db.InsertQueueBatch(pendingEntries); err != nil {
 		writeInternalError(w, r, "failed to insert queued galleries", err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]int{
-		"added":             len(pendingEntries),
+		"added":             len(pendingEntries) + len(resetIDs),
 		"skipped_owned":     skippedOwned,
 		"skipped_duplicate": skippedDuplicate,
 	})

@@ -9,6 +9,7 @@ const APP_DISPLAY_NAME = 'Full Swing';
 const APP_USER_MODEL_ID = 'com.fullswing.manager';
 const LEGACY_APP_DIR_NAME = 'doujinshi-manager';
 const APP_STATE_FILES = ['config.json', 'doujinshi.db'];
+const MAX_LOG_ENTRIES = 1000;
 const DEFAULT_SETTINGS = Object.freeze({
   page_workers: 10,
   gallery_workers: 2,
@@ -63,17 +64,44 @@ let backendProcess = null;
 let usingExistingBackend = false;
 let configPath = null;
 let config = null;
-let logs = []; // Store logs for display
+const logs = new Array(MAX_LOG_ENTRIES);
+let logStart = 0;
+let logCount = 0;
 let backendStatusTimer = null;
 let lastDownloadingState = false;
 let manualStopRequested = false;
 let backendRestartPending = false;
 let completionNotificationSent = false;
 
+function appendLogEntry(entry) {
+  const nextIndex = (logStart + logCount) % MAX_LOG_ENTRIES;
+  logs[nextIndex] = entry;
+
+  if (logCount < MAX_LOG_ENTRIES) {
+    logCount += 1;
+    return;
+  }
+
+  logStart = (logStart + 1) % MAX_LOG_ENTRIES;
+}
+
+function getLogEntries() {
+  const entries = new Array(logCount);
+  for (let index = 0; index < logCount; index += 1) {
+    entries[index] = logs[(logStart + index) % MAX_LOG_ENTRIES];
+  }
+  return entries;
+}
+
+function clearLogEntries() {
+  logStart = 0;
+  logCount = 0;
+}
+
 function addLog(message) {
   const timestamp = new Date().toISOString();
   const logEntry = `[${timestamp}] ${message}`;
-  logs.push(logEntry);
+  appendLogEntry(logEntry);
   try {
     process.stdout.write(`${logEntry}\n`);
   } catch {
@@ -294,7 +322,7 @@ function refreshTrayPopupState() {
 function updateTrayMenu() {
   const isRunning = isAnyBackendRunning();
   if (tray) {
-    tray.setToolTip(`Doujinshi Manager — ${isRunning ? 'Running' : 'Stopped'}`);
+	tray.setToolTip(`${APP_DISPLAY_NAME} — ${isRunning ? 'Running' : 'Stopped'}`);
   }
   refreshTrayPopupState();
 }
@@ -589,6 +617,9 @@ function startBackendStatusMonitoring() {
   backendStatusTimer = setInterval(pollStatus, 3000);
 }
 
+// External backend detection relies on Windows-specific PowerShell and WMI APIs.
+// On other platforms we intentionally skip process inspection and fall back to
+// reusing any already-running backend that answers on the configured port.
 function findListeningBackendProcess(port) {
   return new Promise((resolve) => {
     if (process.platform !== 'win32') {
@@ -647,6 +678,14 @@ async function startBackend() {
   const backendPath = getBackendExecutablePath();
   const alreadyRunning = await isBackendReachable(port);
   if (alreadyRunning) {
+    if (process.platform !== 'win32') {
+      usingExistingBackend = true;
+      addLog(`Backend already running on port ${port}; Windows-only process detection is unavailable on ${process.platform}, so using the existing instance.`);
+      startBackendStatusMonitoring();
+      updateTrayMenu();
+      return;
+    }
+
     const existingProcess = await findListeningBackendProcess(port);
     const existingPath = existingProcess?.path ? path.resolve(existingProcess.path).toLowerCase() : '';
     const targetPath = path.resolve(backendPath).toLowerCase();
@@ -884,7 +923,7 @@ function openLogs() {
   logWindow.loadFile('log-window.html');
   logWindow.once('ready-to-show', () => {
     logWindow.show();
-    logWindow.webContents.send(CHANNELS.LOG_INITIAL, logs);
+    logWindow.webContents.send(CHANNELS.LOG_INITIAL, getLogEntries());
   });
 
   logWindow.on('closed', () => {
@@ -931,6 +970,19 @@ app.whenReady().then(() => {
     return result.filePaths[0];
   });
 
+  ipcMain.handle(CHANNELS.SETTINGS_SELECT_DOWNLOAD_PATH, async (_event, currentPath) => {
+    const result = await dialog.showOpenDialog(settingsWindow || undefined, {
+      defaultPath: currentPath || (config && config.download_path) || app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory']
+    });
+
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
   ipcMain.on(CHANNELS.TRAY_START_BACKEND, () => {
     startBackend();
   });
@@ -947,16 +999,16 @@ app.whenReady().then(() => {
     resumeDownloads();
   });
 
-  ipcMain.on(CHANNELS.TRAY_CANCEL_DOWNLOADS, () => {
-    pauseDownloads();
-  });
-
   ipcMain.on(CHANNELS.TRAY_OPEN_SETTINGS, () => {
     openSettings();
   });
 
   ipcMain.on(CHANNELS.TRAY_OPEN_LOGS, () => {
     openLogs();
+  });
+
+  ipcMain.on(CHANNELS.LOG_CLEAR, () => {
+    clearLogEntries();
   });
 
   ipcMain.on(CHANNELS.TRAY_OPEN_BROWSE, () => {

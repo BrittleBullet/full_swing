@@ -228,7 +228,7 @@ export default function App() {
     try {
       const result = await sendMessage("nhq:sync-library");
       if (!result?.success) {
-        throw new Error("Sync failed");
+        throw new Error(result?.message || "Library sync failed.");
       }
 
       setLastSyncedAt(result.syncedAt || Date.now());
@@ -244,7 +244,7 @@ export default function App() {
       });
     } catch (error) {
       reportNonFatalError("Failed to sync library", error);
-      setStatus({ tone: "error", message: "Library sync failed." });
+      setStatus({ tone: "error", message: error?.message || "Library sync failed." });
     } finally {
       setBusyAction("");
     }

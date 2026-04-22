@@ -9,7 +9,6 @@ const CHANNELS = Object.freeze({
   TRAY_STOP_BACKEND: 'tray-popup:stop-backend',
   TRAY_PAUSE_DOWNLOADS: 'tray-popup:pause-downloads',
   TRAY_RESUME_DOWNLOADS: 'tray-popup:resume-downloads',
-  TRAY_CANCEL_DOWNLOADS: 'tray-popup:cancel-downloads',
   TRAY_OPEN_SETTINGS: 'tray-popup:open-settings',
   TRAY_OPEN_LOGS: 'tray-popup:open-logs',
   TRAY_OPEN_BROWSE: 'tray-popup:open-browse',
@@ -18,10 +17,12 @@ const CHANNELS = Object.freeze({
   SETTINGS_MINIMIZE: 'settings-window:minimize',
   SETTINGS_CLOSE: 'settings-window:close',
   SETTINGS_SELECT_LIBRARY_PATH: 'settings-window:select-library-path',
+  SETTINGS_SELECT_DOWNLOAD_PATH: 'settings-window:select-download-path',
   SETTINGS_SAVE_CONFIG: 'save-config',
   SETTINGS_SAVE_RESULT: 'settings-window:save-result',
   LOG_INITIAL: 'initial-logs',
-  LOG_UPDATE: 'log-update'
+  LOG_UPDATE: 'log-update',
+  LOG_CLEAR: 'log-clear'
 });
 
 const sendChannels = new Set([
@@ -29,14 +30,14 @@ const sendChannels = new Set([
   CHANNELS.TRAY_STOP_BACKEND,
   CHANNELS.TRAY_PAUSE_DOWNLOADS,
   CHANNELS.TRAY_RESUME_DOWNLOADS,
-  CHANNELS.TRAY_CANCEL_DOWNLOADS,
   CHANNELS.TRAY_OPEN_SETTINGS,
   CHANNELS.TRAY_OPEN_LOGS,
   CHANNELS.TRAY_OPEN_BROWSE,
   CHANNELS.TRAY_QUIT,
   CHANNELS.SETTINGS_MINIMIZE,
   CHANNELS.SETTINGS_CLOSE,
-  CHANNELS.SETTINGS_SAVE_CONFIG
+  CHANNELS.SETTINGS_SAVE_CONFIG,
+  CHANNELS.LOG_CLEAR
 ]);
 
 const onChannels = new Set([
@@ -49,7 +50,8 @@ const onChannels = new Set([
 ]);
 
 const invokeChannels = new Set([
-  CHANNELS.SETTINGS_SELECT_LIBRARY_PATH
+  CHANNELS.SETTINGS_SELECT_LIBRARY_PATH,
+  CHANNELS.SETTINGS_SELECT_DOWNLOAD_PATH
 ]);
 
 contextBridge.exposeInMainWorld('fullSwingApp', {

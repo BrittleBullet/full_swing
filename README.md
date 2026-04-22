@@ -14,7 +14,7 @@ This builds on [doujinshi-queue-extension](https://github.com/BrittleBullet/douj
 1. Download the latest zip from the GitHub Releases page.
 2. Extract it to a normal folder.
 3. Run the setup file, or use the portable exe.
-4. Open Settings on first launch, choose your library folder, and save.
+4. Open Settings on first launch, choose your library folder, optionally set a download staging folder, and save.
 
 ## For development
 

@@ -5,6 +5,9 @@ import "time"
 // GalleryStatus represents the queue lifecycle state for a gallery.
 type GalleryStatus string
 
+// HistoryStatus represents the recorded outcome of a gallery processing event.
+type HistoryStatus string
+
 const (
 	StatusPending     GalleryStatus = "pending"
 	StatusDownloading GalleryStatus = "downloading"
@@ -12,6 +15,14 @@ const (
 	StatusFailed      GalleryStatus = "failed"
 	StatusDuplicate   GalleryStatus = "duplicate"
 	StatusNotFound    GalleryStatus = "not_found"
+)
+
+const (
+	HistoryStatusSuccess   HistoryStatus = "success"
+	HistoryStatusFailed    HistoryStatus = "failed"
+	HistoryStatusDuplicate HistoryStatus = "duplicate"
+	HistoryStatusCancelled HistoryStatus = "cancelled"
+	HistoryStatusNotFound  HistoryStatus = "not_found"
 )
 
 // OwnedEntry records a gallery that is already present in the local library.
@@ -36,11 +47,11 @@ type QueueEntry struct {
 
 // HistoryEntry captures a past queue event for the activity log.
 type HistoryEntry struct {
-	ID        int       `json:"id"`
-	GalleryID string    `json:"gallery_id"`
-	Status    string    `json:"status"`
-	Error     string    `json:"error,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+	ID        int           `json:"id"`
+	GalleryID string        `json:"gallery_id"`
+	Status    HistoryStatus `json:"status"`
+	Error     string        `json:"error,omitempty"`
+	Timestamp time.Time     `json:"timestamp"`
 }
 
 // DownloadProgress describes the current SSE payload for an active gallery.

@@ -1,4 +1,4 @@
-export const EXTENSION_VERSION = "1.0.0";
+export const EXTENSION_VERSION = __FULL_SWING_VERSION__;
 
 export function formatVersionMismatchMessage(appVersion) {
   const normalizedAppVersion = String(appVersion || "unknown").trim() || "unknown";

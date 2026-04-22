@@ -6,9 +6,27 @@ const API_BASE_CANDIDATES = ["http://127.0.0.1:8080/api", "http://localhost:8080
 const APP_STATUS_TIMEOUT_MS = 500;
 const OWNED_CHECK_TIMEOUT_MS = 3000;
 const SYNC_TIMEOUT_MS = 5000;
+const LIBRARY_RECONCILE_TIMEOUT_MS = 30000;
 const SEND_QUEUE_TIMEOUT_MS = 20000;
 
 let preferredApiBase = API_BASE_CANDIDATES[0];
+
+async function notifyOwnedSyncComplete(payload) {
+  if (!chrome?.tabs?.query || !chrome?.tabs?.sendMessage) {
+    return;
+  }
+
+  try {
+    const tabs = await chrome.tabs.query({ url: ["https://nhentai.net/*"] });
+    await Promise.allSettled(
+      tabs
+        .filter((tab) => Number.isInteger(tab.id))
+        .map((tab) => chrome.tabs.sendMessage(tab.id, { type: "nhq:owned-sync-complete", ...payload }))
+    );
+  } catch {
+    // Ignore refresh fan-out failures; storage updates remain the source of truth.
+  }
+}
 
 function reportNonFatalError(message, error) {
   return {
@@ -102,6 +120,18 @@ export default defineBackground(() => {
           });
           return;
         }
+        const reconcileResult = await fetchJson("/library/reconcile", { method: "POST" }, LIBRARY_RECONCILE_TIMEOUT_MS);
+        if (!reconcileResult.ok) {
+          const reconcileMessage = typeof reconcileResult.data === "string"
+            ? reconcileResult.data
+            : reconcileResult.data?.error || "Failed to reconcile library.";
+          sendResponse({
+            success: false,
+            online: true,
+            message: reconcileMessage
+          });
+          return;
+        }
         const result = await fetchJson("/owned/ids", {}, SYNC_TIMEOUT_MS);
         const ids = Array.isArray(result.data)
           ? result.data.map((id) => String(id).trim()).filter(Boolean)
@@ -127,6 +157,7 @@ export default defineBackground(() => {
 
           const pruneResult = await pruneQueuedGalleriesByIds(ids);
           removedFromQueue = Number(pruneResult?.removed || 0);
+          await notifyOwnedSyncComplete({ ids, syncedAt, removedFromQueue });
         }
 
         sendResponse({
@@ -135,7 +166,9 @@ export default defineBackground(() => {
           count: ids.length,
           syncedAt,
           ids,
-          removedFromQueue
+          removedFromQueue,
+          removed: Number(reconcileResult.data?.removed || 0),
+          message: result.ok ? "" : (typeof result.data === "string" ? result.data : result.data?.error || "Failed to fetch owned IDs.")
         });
         return;
       }

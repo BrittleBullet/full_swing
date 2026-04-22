@@ -1,11 +1,15 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
+
+const libraryReconcileTimeout = 2 * time.Minute
 
 func (s *Server) handleOwnedCheck(w http.ResponseWriter, r *http.Request) {
 	id, err := normalizeNumericID(chi.URLParam(r, "id"))
@@ -58,6 +62,28 @@ func (s *Server) handleOwnedIDs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ids)
+}
+
+func (s *Server) handleLibraryReconcile(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), libraryReconcileTimeout)
+	defer cancel()
+
+	removed, err := s.library.Reconcile(ctx)
+	if err != nil {
+		writeInternalError(w, r, "failed to reconcile library", err)
+		return
+	}
+
+	remaining, err := s.db.CountOwned()
+	if err != nil {
+		writeInternalError(w, r, "failed to count library entries", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]int{
+		"removed": removed,
+		"owned":   remaining,
+	})
 }
 
 func (s *Server) handleListLibrary(w http.ResponseWriter, r *http.Request) {

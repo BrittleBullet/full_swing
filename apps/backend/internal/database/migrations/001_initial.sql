@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS queue (
     title       TEXT,
     artist      TEXT,
     status      TEXT NOT NULL DEFAULT 'pending',
-    -- pending | downloading | done | failed | duplicate
+    -- pending | downloading | done | failed | duplicate | not_found
     error       TEXT,
     added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS queue (
 CREATE TABLE IF NOT EXISTS history (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     gallery_id  TEXT NOT NULL,
-    status      TEXT NOT NULL,   -- success | failed
+    status      TEXT NOT NULL,   -- success | failed | duplicate | cancelled | not_found
     error       TEXT,
     timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP
 );

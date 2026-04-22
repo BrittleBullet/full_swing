@@ -4,6 +4,7 @@ const CHANNELS = appBridge?.channels || {};
 let config = {};
 let defaults = {
   library_path: '',
+  download_path: '',
   page_workers: 10,
   gallery_workers: 2,
   api_request_delay: 0.25,
@@ -57,6 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('save').addEventListener('click', saveConfig);
   document.getElementById('reset-defaults').addEventListener('click', resetDefaults);
   document.getElementById('library-path').addEventListener('click', selectLibraryPath);
+  document.getElementById('download-path').addEventListener('click', selectDownloadPath);
   document.getElementById('minimize-window').addEventListener('click', () => appBridge?.send(CHANNELS.SETTINGS_MINIMIZE));
   document.getElementById('close-window').addEventListener('click', () => appBridge?.send(CHANNELS.SETTINGS_CLOSE));
 });
@@ -82,6 +84,7 @@ function setStatus(message, isError = false, autoClearMs = 0) {
 
 function populateForm(values = config) {
   document.getElementById('library-path-input').value = values.library_path || defaults.library_path || '';
+  document.getElementById('download-path-input').value = values.download_path || defaults.download_path || '';
   document.getElementById('page-workers').value = values.page_workers || defaults.page_workers;
   document.getElementById('gallery-workers').value = values.gallery_workers || defaults.gallery_workers;
   document.getElementById('api-delay').value = values.api_request_delay ?? defaults.api_request_delay;
@@ -113,17 +116,31 @@ async function selectLibraryPath() {
   }
 }
 
+async function selectDownloadPath() {
+  try {
+    const currentPath = document.getElementById('download-path-input').value.trim();
+    const selectedPath = await appBridge.invoke(CHANNELS.SETTINGS_SELECT_DOWNLOAD_PATH, currentPath);
+
+    if (selectedPath) {
+      document.getElementById('download-path-input').value = selectedPath;
+      setStatus('');
+    }
+  } catch (error) {
+    setStatus(`Could not open folder picker: ${error.message}`, true);
+  }
+}
+
 function saveConfig() {
   config = {
     ...config,
     library_path: document.getElementById('library-path-input').value.trim(),
+    download_path: document.getElementById('download-path-input').value.trim(),
     page_workers: parseInt(document.getElementById('page-workers').value, 10),
     gallery_workers: parseInt(document.getElementById('gallery-workers').value, 10),
     api_request_delay: parseFloat(document.getElementById('api-delay').value),
     server_port: parseInt(document.getElementById('server-port').value, 10)
   };
 
-  delete config.download_path;
   delete config.image_request_delay;
   delete config.download_delay;
 

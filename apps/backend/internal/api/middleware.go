@@ -11,14 +11,31 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+const defaultRequestTimeout = 60 * time.Second
+const migrateRequestTimeout = 5 * time.Minute
+
 // SetupMiddleware applies the shared HTTP middleware stack for the local API.
 func SetupMiddleware(r *chi.Mux) {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(requestTimeoutMiddleware)
 	r.Use(securityHeadersMiddleware)
 	r.Use(corsMiddleware)
 	r.Use(contentTypeMiddleware)
+}
+
+func requestTimeoutMiddleware(next http.Handler) http.Handler {
+	defaultTimeout := middleware.Timeout(defaultRequestTimeout)
+	migrateTimeout := middleware.Timeout(migrateRequestTimeout)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/migrate" {
+			migrateTimeout(next).ServeHTTP(w, r)
+			return
+		}
+
+		defaultTimeout(next).ServeHTTP(w, r)
+	})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

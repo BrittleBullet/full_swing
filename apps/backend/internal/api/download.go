@@ -38,10 +38,6 @@ func (s *Server) handleDownloadPause(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "paused": paused})
 }
 
-func (s *Server) handleDownloadStop(w http.ResponseWriter, r *http.Request) {
-	s.handleDownloadPause(w, r)
-}
-
 func (s *Server) handleDownloadRetry(w http.ResponseWriter, r *http.Request) {
 	id, err := normalizeNumericID(chi.URLParam(r, "id"))
 	if err != nil {

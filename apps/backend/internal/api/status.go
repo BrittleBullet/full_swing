@@ -3,11 +3,9 @@ package api
 import (
 	"net/http"
 
+	"doujinshi-manager/internal/appversion"
 	"doujinshi-manager/internal/models"
 )
-
-// AppVersion must be updated together with the browser extension release version.
-const AppVersion = "1.0.0"
 
 // StatusJob describes the active gallery download in the status response.
 type StatusJob struct {
@@ -96,7 +94,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	response := StatusResponse{
 		Running:          true,
-		Version:          AppVersion,
+		Version:          appversion.Current(),
 		ServerPort:       s.config.ServerPort,
 		Downloading:      downloadingCount > 0,
 		Paused:           s.downloader.IsPaused(),
