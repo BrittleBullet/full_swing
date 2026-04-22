@@ -127,6 +127,20 @@ func (db *DB) CountOwned() (int, error) {
 	return count, err
 }
 
+func (db *DB) ClearOwned() (int, error) {
+	result, err := db.Exec(`DELETE FROM owned`)
+	if err != nil {
+		return 0, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	return int(affected), nil
+}
+
 func (db *DB) ListOwned(limit, offset int) ([]models.OwnedEntry, error) {
 	rows, err := db.Query(`
 		SELECT id, media_id, title, artist, added_at

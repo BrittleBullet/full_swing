@@ -43,6 +43,7 @@ func (s *Server) Router() *chi.Mux {
 		r.Get("/owned/ids", s.handleOwnedIDs)
 		r.Get("/owned/{id}", s.handleOwnedCheck)
 		r.Post("/owned/check", s.handleOwnedCheckBatch)
+		r.Delete("/owned", s.handleClearOwned)
 
 		r.Get("/queue", s.handleListQueue)
 		r.Post("/queue", s.handleEnqueue)

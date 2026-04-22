@@ -43,6 +43,56 @@ func TestHandleMigrate_RejectsWhenOwnedAlreadyPopulated(t *testing.T) {
 	}
 }
 
+func TestHandleClearOwned_RemovesAllEntries(t *testing.T) {
+	s := newTestServer(t)
+
+	for _, entry := range []*models.OwnedEntry{
+		{
+			ID:      "123456",
+			MediaID: "media-123456",
+			Title:   "Owned One",
+			Artist:  "Artist One",
+			AddedAt: time.Now(),
+		},
+		{
+			ID:      "654321",
+			MediaID: "media-654321",
+			Title:   "Owned Two",
+			Artist:  "Artist Two",
+			AddedAt: time.Now(),
+		},
+	} {
+		if err := s.db.InsertOwned(entry); err != nil {
+			t.Fatalf("failed to insert owned entry: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/owned", nil)
+	rec := httptest.NewRecorder()
+
+	s.handleClearOwned(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %s", rec.Code, rec.Body.String())
+	}
+
+	var response map[string]int
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if response["cleared"] != 2 {
+		t.Fatalf("expected cleared=2, got %d", response["cleared"])
+	}
+
+	remaining, err := s.db.CountOwned()
+	if err != nil {
+		t.Fatalf("failed to count owned entries: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("expected owned table to be empty, got %d", remaining)
+	}
+}
+
 func TestHandleLibraryReconcile_RemovesMissingOwnedEntries(t *testing.T) {
 	s := newTestServer(t)
 	s.library = library.NewScanner(t.TempDir(), s.db)

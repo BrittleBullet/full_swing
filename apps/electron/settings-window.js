@@ -11,16 +11,83 @@ let defaults = {
   server_port: 8080
 };
 let statusTimer = null;
+let scanInProgress = false;
+let clearInProgress = false;
+let clearConfirmPending = false;
 
 function setSavingState(isSaving) {
   const saveButton = document.getElementById('save');
   const resetButton = document.getElementById('reset-defaults');
+  const scanButton = document.getElementById('scan-library');
+  const clearButton = document.getElementById('clear-library');
   if (saveButton) {
     saveButton.disabled = isSaving;
     saveButton.textContent = isSaving ? 'Saving...' : 'Save';
   }
   if (resetButton) {
     resetButton.disabled = isSaving;
+  }
+  if (scanButton) {
+    scanButton.disabled = isSaving || scanInProgress || clearInProgress;
+  }
+  if (clearButton) {
+    clearButton.disabled = isSaving || scanInProgress || clearInProgress;
+  }
+}
+
+function setScanState(isScanning) {
+  scanInProgress = isScanning;
+  const scanButton = document.getElementById('scan-library');
+  const scanProgress = document.getElementById('scan-progress');
+  if (scanButton) {
+    scanButton.disabled = isScanning;
+    scanButton.textContent = isScanning ? 'Scanning...' : 'Scan Library';
+  }
+  if (scanProgress) {
+    scanProgress.classList.toggle('active', isScanning);
+  }
+
+  const saveButton = document.getElementById('save');
+  const resetButton = document.getElementById('reset-defaults');
+  const clearButton = document.getElementById('clear-library');
+  if (saveButton) {
+    saveButton.disabled = isScanning || clearInProgress;
+  }
+  if (resetButton) {
+    resetButton.disabled = isScanning || clearInProgress;
+  }
+  if (clearButton) {
+    clearButton.disabled = isScanning || clearInProgress;
+  }
+}
+
+function resetClearConfirm() {
+  clearConfirmPending = false;
+  const clearButton = document.getElementById('clear-library');
+  if (clearButton && !clearInProgress) {
+    clearButton.textContent = 'Clear Library';
+  }
+}
+
+function setClearState(isClearing) {
+  clearInProgress = isClearing;
+  const clearButton = document.getElementById('clear-library');
+  if (clearButton) {
+    clearButton.disabled = isClearing;
+    clearButton.textContent = isClearing ? 'Clearing...' : (clearConfirmPending ? 'Are you sure?' : 'Clear Library');
+  }
+
+  const scanButton = document.getElementById('scan-library');
+  const saveButton = document.getElementById('save');
+  const resetButton = document.getElementById('reset-defaults');
+  if (scanButton) {
+    scanButton.disabled = isClearing || scanInProgress;
+  }
+  if (saveButton) {
+    saveButton.disabled = isClearing;
+  }
+  if (resetButton) {
+    resetButton.disabled = isClearing;
   }
 }
 
@@ -58,6 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('save').addEventListener('click', saveConfig);
   document.getElementById('reset-defaults').addEventListener('click', resetDefaults);
   document.getElementById('library-path').addEventListener('click', selectLibraryPath);
+  document.getElementById('scan-library').addEventListener('click', scanLibrary);
+  document.getElementById('clear-library').addEventListener('click', clearLibrary);
   document.getElementById('download-path').addEventListener('click', selectDownloadPath);
   document.getElementById('minimize-window').addEventListener('click', () => appBridge?.send(CHANNELS.SETTINGS_MINIMIZE));
   document.getElementById('close-window').addEventListener('click', () => appBridge?.send(CHANNELS.SETTINGS_CLOSE));
@@ -71,11 +140,13 @@ function setStatus(message, isError = false, autoClearMs = 0) {
   }
 
   status.textContent = message || '';
+  status.classList.toggle('busy', !isError && Boolean(message) && scanInProgress);
   status.classList.toggle('error', isError);
 
   if (!isError && message && autoClearMs > 0) {
     statusTimer = setTimeout(() => {
       status.textContent = '';
+      status.classList.remove('busy');
       status.classList.remove('error');
       statusTimer = null;
     }, autoClearMs);
@@ -130,7 +201,107 @@ async function selectDownloadPath() {
   }
 }
 
+async function scanLibrary() {
+  if (scanInProgress) {
+    return;
+  }
+
+  resetClearConfirm();
+
+  const port = parseInt(document.getElementById('server-port').value, 10)
+    || parseInt(config?.server_port, 10)
+    || defaults.server_port
+    || 8080;
+
+  setScanState(true);
+  setStatus('Scanning library... this can take a while for large folders.');
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/migrate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (response.ok) {
+      setStatus(`Imported ${Number(payload?.inserted || 0)} galleries`, false, 5000);
+      return;
+    }
+
+    if (response.status === 409) {
+      setStatus('Already imported — clear owned table first to reimport', true);
+      return;
+    }
+
+    setStatus('Scan failed — check logs', true);
+  } catch {
+    setStatus('Scan failed — check logs', true);
+  } finally {
+    setScanState(false);
+    setSavingState(false);
+  }
+}
+
+async function clearLibrary() {
+  if (clearInProgress) {
+    return;
+  }
+
+  if (!clearConfirmPending) {
+    clearConfirmPending = true;
+    const clearButton = document.getElementById('clear-library');
+    if (clearButton) {
+      clearButton.textContent = 'Are you sure?';
+    }
+    setStatus('Click Clear Library again to delete all imported library records.', true);
+    return;
+  }
+
+  const port = parseInt(document.getElementById('server-port').value, 10)
+    || parseInt(config?.server_port, 10)
+    || defaults.server_port
+    || 8080;
+
+  setClearState(true);
+  setStatus('');
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/owned`, {
+      method: 'DELETE'
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (response.ok) {
+      setStatus(`Cleared ${Number(payload?.cleared || 0)} galleries. Scan Library is available again.`, false, 5000);
+      return;
+    }
+
+    setStatus('Clear failed — check logs', true);
+  } catch {
+    setStatus('Clear failed — check logs', true);
+  } finally {
+    resetClearConfirm();
+    setClearState(false);
+    setSavingState(false);
+  }
+}
+
 function saveConfig() {
+  resetClearConfirm();
   config = {
     ...config,
     library_path: document.getElementById('library-path-input').value.trim(),

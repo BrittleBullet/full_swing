@@ -64,6 +64,16 @@ func (s *Server) handleOwnedIDs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ids)
 }
 
+func (s *Server) handleClearOwned(w http.ResponseWriter, r *http.Request) {
+	cleared, err := s.db.ClearOwned()
+	if err != nil {
+		writeInternalError(w, r, "failed to clear owned entries", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]int{"cleared": cleared})
+}
+
 func (s *Server) handleLibraryReconcile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), libraryReconcileTimeout)
 	defer cancel()

@@ -116,8 +116,48 @@
       min-height: 18px;
     }
 
+    .status-message.busy {
+      color: #f7c948;
+    }
+
     .status-message.error {
       color: var(--accent);
+    }
+
+    .progress-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 18px;
+      color: #f7c948;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      pointer-events: none;
+    }
+
+    .progress-indicator.active {
+      opacity: 1;
+    }
+
+    .progress-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: currentColor;
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 0.35;
+        transform: scale(0.9);
+      }
+
+      50% {
+        opacity: 1;
+        transform: scale(1);
+      }
     }
 
     input {
@@ -155,6 +195,12 @@
       gap: 10px;
     }
 
+    .path-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     .path-input input {
       flex: 1;
     }
@@ -178,6 +224,27 @@
     .browse-button:hover {
       background: #202020;
       border-color: #3a3a3a;
+    }
+
+    .inline-button {
+      align-self: flex-start;
+      min-width: 140px;
+      padding: 0 16px;
+    }
+
+    .inline-button:hover {
+      background: #202020;
+      border-color: #3a3a3a;
+    }
+
+    .danger-button {
+      border-color: #6b2a35;
+      color: #ff8fa3;
+    }
+
+    .danger-button:hover {
+      background: #2a171c;
+      border-color: #8d3445;
     }
 
     .actions {
@@ -230,6 +297,14 @@
           <button id="library-path" class="browse-button" type="button">Browse</button>
         </div>
         <div class="helper-text">Final files are saved here.</div>
+        <div class="path-actions">
+          <button id="scan-library" class="inline-button" type="button">Scan Library</button>
+          <button id="clear-library" class="inline-button danger-button" type="button">Clear Library</button>
+        </div>
+        <div id="scan-progress" class="progress-indicator" aria-live="polite">
+          <span class="progress-dot" aria-hidden="true"></span>
+          <span>Scanning library...</span>
+        </div>
       </div>
 
       <div class="form-group">
