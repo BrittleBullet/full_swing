@@ -161,7 +161,7 @@ export function createCardStateController({
   consumeQueueEvent,
   reportNonFatalError
 }) {
-  return {
+  const controller = {
     extractGalleryIdFromHref: (href) => extractGalleryIdFromHref(href, reportNonFatalError),
     getCardGalleryId: (card) => getCardGalleryId(card, reportNonFatalError),
     getCardQueueItem: (card) => getCardQueueItem(card, reportNonFatalError),
@@ -235,7 +235,9 @@ export function createCardStateController({
     scanAndInject(root) {
       const scope = root instanceof Element || root instanceof Document ? root : document;
       const cards = scope.matches?.(CARD_SELECTOR) ? [scope] : Array.from(scope.querySelectorAll(CARD_SELECTOR));
-      cards.forEach((card) => this.injectButton(card));
+      cards.forEach((card) => controller.injectButton(card));
     }
   };
+
+  return controller;
 }
